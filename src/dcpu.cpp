@@ -8,8 +8,9 @@ DCPUState::DCPUState() {
 	nInterrupts = 0;
 	memset(&info, 0, sizeof(DCPURegisterInfo));
 	info.memory = (uint16_t*)malloc(0x10000*sizeof(uint16_t));
-	elapsed = cycles = 0;
+	elapsed = info.cycles = 0;
 	memset(info.memory, 0, 0x10000*sizeof(uint16_t));
+	info.statePtr = (void*)this;
 }
 
 DCPUState::~DCPUState() {
@@ -25,7 +26,6 @@ DCPUInsn DCPUState::decodeInsn() {
 	uint8_t baseOpcode = (opc & 0x1f);
 	uint8_t fieldA = (opc & 0xfc00) >> 10;
 	uint8_t fieldB = (opc & 0x03e0) >> 5;
-	printf("%04x %x %x %x\n", opc, baseOpcode, fieldB, fieldA);
 	
 	// Process field A
 	switch(fieldA) {

@@ -63,8 +63,12 @@ struct DCPURegisterInfo {
 	uint16_t a, b, c, x, y, z, i, j;
 	uint16_t pc, sp, ex, ia;
 	
+	// Cycle stuff
+	int64_t cycles; // Number of available cycles
+	
 	// Memory
 	uint16_t *memory;
+	void* statePtr;
 } __attribute__((packed));
 
 // Full representation of the state of an emulated DCPU
@@ -86,6 +90,5 @@ struct DCPUState {
 	std::list<DCPUHardwareDevice*> hardware;
 	
 	// Threading and state tracking stuff
-	uint64_t cycles; // Number of available cycles
 	uint64_t elapsed; // Total elapsed cycles
 };
