@@ -24,7 +24,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 	# set(CMAKE_CXX_FLAGS "-O0 -pg")
 endif()
 
-find_package(Boost REQUIRED COMPONENTS system filesystem thread chrono)
+find_package(Boost REQUIRED COMPONENTS system filesystem thread chrono program_options)
 find_package(Threads REQUIRED)
 
 include_directories(${Boost_INCLUDE_DIR})

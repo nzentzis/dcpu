@@ -343,7 +343,20 @@ uint16_t& DCPUState::operator[](uint16_t idx) {
 	return info.memory[idx];
 }
 
-void DCPUState::loadFromFile(FILE* fptr) {
-	// Read as much as we can into our memory buffer
-	fread(info.memory, 2, 0x10000, fptr);
+// Load a DCPU memory image from the passed file handle. If translate
+// is true, swap byte ordering on each 16-bit word as the file is
+// read in.
+void DCPUState::loadFromFile(FILE* fptr, bool translate) {
+	uint16_t word;
+	uint8_t  t1, t2;
+	uint16_t *bufptr = info.memory;
+	while(fread(&word, 2, 1, fptr) == 1) {
+		if(translate) {
+			t1 = word & 0xFF;
+			t2 = (word >> 8) & 0xFF;
+			*(bufptr++) = (t1 << 8) | t2;
+		} else {
+			*(bufptr++) = word;
+		}
+	}
 }
