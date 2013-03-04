@@ -23,14 +23,14 @@ int main(int argc, char **argv) {
 	proc.getState().loadFromFile(fopen(argv[1], "rb"));
 	printf("Performing measurement...");
 	boost::chrono::high_resolution_clock::time_point start = clk.now();
-	proc.inject(1000000000);
+	proc.inject(10000);
 	boost::chrono::high_resolution_clock::time_point end = clk.now();
 	printf("Complete\n");
 	boost::chrono::high_resolution_clock::duration d = end-start;
 	boost::chrono::nanoseconds ns = d;
 	
 	DCPURegisterInfo i = proc.getState().info;
-	printf("Final Register Values:\n\tA:%d\tB:%d\tC:%d\tX:%d\tY:%d\tZ:%d\n", i.a, i.b, i.c, i.x, i.y, i.z);
+	printf("Final Register Values:\n\tA:%d\tB:%d\tC:%d\tX:%d\tY:%d\tZ:%d\tI:%d\tJ:%d\n", i.a, i.b, i.c, i.x, i.y, i.z, i.i, i.j);
 	printf("Time Elapsed: %lu ns\n", ns.count());
 	boost::chrono::duration<double, boost::ratio<1> > dsecs = ns;
 	printf("Clock Frequency: %f Hz\n", proc.getState().elapsed/dsecs.count());

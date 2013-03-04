@@ -68,6 +68,9 @@ struct DCPURegisterInfo {
 	
 	// Memory
 	uint16_t *memory;
+	uint8_t enableInterrupts;
+
+	// External state
 	void* statePtr;
 } __attribute__((packed));
 
@@ -81,7 +84,7 @@ struct DCPUState {
 	uint16_t& operator[](uint16_t addr);
 	
 	DCPURegisterInfo info;
-
+	
 	// Interrupt queue
 	uint8_t nInterrupts;
 	uint8_t interruptQueue[256];

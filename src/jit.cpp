@@ -8,58 +8,14 @@
 
 using namespace AsmJit;
 
-ExecutableBuffer::ExecutableBuffer(size_t len) {
-	buffer = (uint8_t*)malloc(len);
-	bufSize = len;
-	setProtection(false);
-}
-
-ExecutableBuffer::~ExecutableBuffer() {
-	setProtection(true);
-	free(buffer);
-}
-
-void ExecutableBuffer::loadString(std::string s) {
-	bufSize = s.length();
-	if(buffer != NULL) free(buffer);
-	buffer = (uint8_t*)malloc(bufSize);
-	memcpy(buffer, s.c_str(), bufSize);
-}
-
-uint8_t& ExecutableBuffer::operator[](size_t idx) {
-	return buffer[idx];
-}
-
-int ExecutableBuffer::setProtection(bool nx) {
-	if(nx) {
-#ifdef WIN32
-	// Use the Windows-specific mprotect
-#else
-	// Use the normal mprotect
-	return mprotect(buffer, bufSize, PROT_READ|PROT_WRITE);
-#endif
-	} else {
-#ifdef WIN32
-	// Use the Windows-specific mprotect
-#else
-	// Use the normal mprotect
-	return mprotect(buffer, bufSize, PROT_READ|PROT_WRITE|PROT_EXEC);
-#endif
-	}
-}
-
-void* ExecutableBuffer::getBufferPtr() {
-	return (void*)buffer;
-}
-
-JITCompilationContext::JITCompilationContext() {
-}
-
-JITCompilationContext::~JITCompilationContext() {
-}
-
-void JITCompilationContext::callCode(DCPUState* s, ExecutableBuffer &buf) {
-}
+// Stores state that is global throughout the codegen. Deleted
+// when codegen is finished.
+struct CodeGenState {
+	// Decrement every non-conditional insn. When 0, bind condEndLbl and
+	// set to -1
+	int8_t bindCtr;
+	Label condEndLbl;
+};
 
 /* Emission stuff. Mappings:
  * RDI (first parameter) is the DCPURegisterInfo pointer
@@ -147,14 +103,15 @@ void dcpuEmitCarry(AsmJit::Assembler& s, uint16_t value) {
 	s.pop(eax);
 }
 
-void JITCompilationContext::emitCycleHook(AsmJit::Assembler& s, uint8_t cycles) {
+void emitCycleHook(AsmJit::Assembler& s, uint8_t cycles) {
 }
 
-void JITCompilationContext::emitHeader(AsmJit::Assembler& s) {
+void emitHeader(AsmJit::Assembler& s) {
 	// No header - the caller does this for us now
 }
 
-void JITCompilationContext::emitFooter(AsmJit::Assembler& s) {
+void emitFooter(AsmJit::Assembler& s) {
+	s.mov(eax, 0);
 	s.ret();
 }
 
@@ -179,6 +136,12 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg) {
 		case DCPUValue::VT_PUSHPOP:	// In this case, it's a pop
 			break;
 		case DCPUValue::VT_PEEK:
+			s.mov(rdx, 0xffff);
+			s.mov(rcx, word_ptr(rdi, 18));
+			s.shl(rcx, 1);
+			s.sub(rdx, rcx);
+			s.mov(rsi, word_ptr(rdi, 32));
+			s.mov(word_ptr(rsi, rdx), reg);
 			break;
 		case DCPUValue::VT_PICK:
 			break;
@@ -192,7 +155,8 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg) {
 			s.mov(reg, word_ptr(rdi, 2*10));
 			break;
 		case DCPUValue::VT_MEMORY:
-			s.mov(reg, word_ptr(rdi, 12+r.nextWord));
+			s.mov(rsi, word_ptr(rdi, 12));
+			s.mov(reg, word_ptr(rsi, 2*r.nextWord));
 			break;
 		case DCPUValue::VT_LITERAL:
 			s.mov(reg, r.nextWord);
@@ -202,6 +166,11 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg) {
 
 Mem getRegisterMemory(DCPUValue r) {
 	return word_ptr(rdi, 2*((uint8_t)(r.reg)));
+}
+
+void emitDCPUSetPC(Assembler& s, uint16_t n) {
+	// 16-bit values are 2 bytes each, offset 8 from the start of the struct
+	s.mov(word_ptr(rdi, 2*8), n);
 }
 
 template<typename T>
@@ -233,12 +202,30 @@ void emitDCPUPut(Assembler& s, DCPUValue r, T &reg) {
 			s.mov(word_ptr(rdi, 2*10), reg);
 			break;
 		case DCPUValue::VT_MEMORY:
-			s.mov(word_ptr(rdi, 12+r.nextWord), reg);
+			s.mov(rsi, word_ptr(rdi, 12));
+			s.mov(word_ptr(rsi, r.nextWord*2), reg);
 			break;
 		case DCPUValue::VT_LITERAL:
 			// Fail silently
 			break;
 	}
+}
+
+template<typename T>
+void emitCostCycles(Assembler& s, T &num) {
+	s.sub(qword_ptr(rdi, 24), num);
+}
+
+void hardwareHook(DCPURegisterInfo* regInfo) {
+	DCPUState* state = (DCPUState*)(regInfo->statePtr);
+}
+
+// This should be called after an insn is run
+void callHardwareHook(Assembler& s) {
+	// Special param handling is unnecessary because the x86-64 calling
+	// convention has its first param passed in rdi, and the CPU's
+	// register info pointer (the only param) is always kept in RDI for
+	// the purposes of this routine. Hence, just call the hardware hook.
 }
 
 JITProcessor::JITProcessor() {
@@ -252,7 +239,9 @@ JITProcessor::~JITProcessor() {
 	// Free the code cache
 	std::list<uint16_t>::iterator i;
 	for(i=m_cacheAddrs.begin();i != m_cacheAddrs.end();i++) {
-		if(m_codeCache[*i] != NULL) MemoryManager::getGlobal()->free((void*)(m_codeCache[*i]));
+		if(m_codeCache[*i] != NULL)
+			MemoryManager::getGlobal()->free(
+					(void*)(m_codeCache[*i]));
 	}
 	
 	// Free the cache arrays
@@ -261,22 +250,21 @@ JITProcessor::~JITProcessor() {
 }
 
 void JITProcessor::inject(uint64_t cycles) {
-	m_state.cycles += cycles;
+	m_state.info.cycles += cycles;
 	while(cycle());
 }
 
 bool JITProcessor::cycle() {
-	// Check the current instruction pointer to see if it's in the code cache
+	// Check the current instruction pointer to see if it's in the code
+	// cache
 	if(m_codeCache[m_state.info.pc] == NULL) {
 		// Generate new code for the instruction pointer
 		generateCode();
 	}
 	
 	// Check for queued cycles
-	uint32_t cost = m_chunkCosts[m_state.info.pc];
-	if(m_state.cycles < cost) return false;
-	m_state.cycles -= cost;
-	m_state.elapsed += cost;
+	uint32_t oldCycles = m_state.info.cycles;
+	if(m_state.info.cycles < 0) return false;
 
 	// Execute the code at the instruction pointer
 	dcpu64Func fptr = m_codeCache[m_state.info.pc];
@@ -305,11 +293,11 @@ bool JITProcessor::cycle() {
 			:
 			: "r"(fptr), "r"(&(m_state.info))
 			);
+	m_state.elapsed += (oldCycles-m_state.info.cycles);
 	return true;
 }
 
-void emitSET(Assembler& s, DCPUInsn inst, JITCompilationContext& ctx) {
-	ctx.emitCycleHook(s, inst.cycleCost);
+void emitSET(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
 	if(inst.a.val == DCPUValue::VT_LITERAL) {
 		// Shortcircuit
 		emitDCPUPut(s, inst.b, inst.a.nextWord);
@@ -319,22 +307,220 @@ void emitSET(Assembler& s, DCPUInsn inst, JITCompilationContext& ctx) {
 	}
 }
 
-void emitADD(Assembler& s, DCPUInsn inst, JITCompilationContext& ctx) {
-	ctx.emitCycleHook(s, inst.cycleCost);
+void emitADD(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
 	emitDCPUFetch(s, inst.b, eax);
 	emitDCPUFetch(s, inst.a, ebx);
 	s.add(eax, ebx);
-	emitDCPUPut(s, inst.b, eax);
+	emitDCPUPut(s, inst.b, ax);
 	dcpuEmitCarry(s, 1);
 }
 
-void emitSUB(Assembler& s, DCPUInsn inst, JITCompilationContext& ctx) {
-	ctx.emitCycleHook(s, inst.cycleCost);
+void emitSUB(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
 	emitDCPUFetch(s, inst.a, ebx);
 	emitDCPUFetch(s, inst.b, eax);
 	s.sub(eax, ebx);
-	emitDCPUPut(s, inst.b, eax);
+	emitDCPUPut(s, inst.b, ax);
 	dcpuEmitCarry(s, 0xffff);
+}
+
+void emitMUL(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+	emitDCPUFetch(s, inst.a, ebx);
+	emitDCPUFetch(s, inst.b, eax);
+	
+	// Multiply ax by bx, store lower part in ax and higher part in dx
+	s.mul(bx);
+	
+	// Store the overflow first, since edx is a discretionary register
+	// we don't want our result clobbered before we have the chance to
+	// store it in the DCPU's register
+	s.mov(word_ptr(rdi, 2*10), dx);
+	
+	// And store the lower part of the output
+	emitDCPUPut(s, inst.b, ax);
+}
+
+void emitMLI(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+	// Same as MUL, but using imul instead of mul
+	emitDCPUFetch(s, inst.a, ebx);
+	emitDCPUFetch(s, inst.b, eax);
+	s.imul(bx);
+	s.mov(word_ptr(rdi, 2*10), dx);
+	emitDCPUPut(s, inst.b, ax);
+}
+
+void emitDIV(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+	emitDCPUFetch(s, inst.a, ebx);
+	emitDCPUFetch(s, inst.b, eax);
+	
+	// Build a label for zero-checking
+	Label doneLbl = s.newLabel();
+
+	// Set up the division operation
+	s.mov(ecx, eax); // Store B value
+	s.xor_(edx, edx); // The second part can be zeroed since unsigned division
+	s.cmp(ebx, edx);
+	s.cmove(eax, edx);
+	s.je(doneLbl);
+	s.shl(eax, 16); // Shift 16 to compute the EX value
+	s.div(ebx); // Get the new value for the EX register
+	
+	// Update EX register
+	s.mov(word_ptr(rdi, 2*10), ax);
+	
+	// Divide for B register
+	s.mov(eax, ecx);
+	s.div(ebx); // Get the new value for the B register
+	s.bind(doneLbl);
+	emitDCPUPut(s, inst.b, ax);
+}
+
+void emitDVI(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+}
+
+void emitMOD(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+}
+
+void emitMDI(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+}
+
+void emitAND(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+	emitDCPUFetch(s, inst.a, eax);
+	emitDCPUFetch(s, inst.b, ebx);
+	s.and_(eax, ebx);
+	emitDCPUPut(s, inst.b, ax);
+}
+
+void emitBOR(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+	emitDCPUFetch(s, inst.a, eax);
+	emitDCPUFetch(s, inst.b, ebx);
+	s.or_(eax, ebx);
+	emitDCPUPut(s, inst.b, ax);
+}
+
+void emitXOR(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+	emitDCPUFetch(s, inst.a, eax);
+	emitDCPUFetch(s, inst.b, ebx);
+	s.xor_(eax, ebx);
+	emitDCPUPut(s, inst.b, ax);
+}
+
+void emitSHR(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+}
+
+void emitASR(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+}
+
+void emitSHL(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+}
+
+void emitSTI(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+	emitSET(s, inst, cgs);
+	s.add(word_ptr(rdi, 12), 1);
+	s.add(word_ptr(rdi, 14), 1);
+}
+
+void emitSTD(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+	emitSET(s, inst, cgs);
+	s.sub(word_ptr(rdi, 12), 1);
+	s.sub(word_ptr(rdi, 14), 1);
+}
+
+void emitConditional(Assembler& s, DCPUInsn inst, CodeGenState& cgs, uint32_t skipCost) {
+	emitDCPUFetch(s, inst.a, eax);
+	emitDCPUFetch(s, inst.b, ebx);
+	
+	// Compare the two
+	
+	switch(inst.op) {
+		case DO_IFB:
+		case DO_IFC:
+			s.test(eax, ebx);
+			break;
+		default:
+			s.cmp(eax,ebx);
+	}
+	Label localDontSkip = s.newLabel();
+	switch(inst.op) {
+		case DO_IFB:
+			s.jz(localDontSkip);
+			break;
+		case DO_IFC:
+			s.jnz(localDontSkip);
+			break;
+		case DO_IFE:
+			s.jne(localDontSkip);
+			break;
+		case DO_IFN:
+			s.je(localDontSkip);
+			break;
+		case DO_IFG:
+			s.jng(localDontSkip);
+			break;
+		case DO_IFA:
+			s.jna(localDontSkip);
+			break;
+		case DO_IFL:
+			s.jnl(localDontSkip);
+			break;
+		case DO_IFU:
+			s.jnb(localDontSkip);
+			break;
+		default:
+			break;
+	}
+	emitCostCycles(s, skipCost);
+	s.jmp(cgs.condEndLbl);
+	s.bind(localDontSkip);
+}
+
+bool isConditionalInsn(DCPUInsn inst) {
+	switch(inst.op) {
+		case DO_IFB:
+		case DO_IFC:
+		case DO_IFE:
+		case DO_IFN:
+		case DO_IFG:
+		case DO_IFA:
+		case DO_IFL:
+		case DO_IFU:
+			return true;
+		default:
+			return false;
+	}
+}
+
+// Called from the main generation loop whenever an IF* opcode is encountered. This
+// function figures out the length of the conditional chain, figures out the cycle
+// cost for each function to skip, sets up the code generation state's bindCtr member
+// to let the caller know when to bind to the skip target, emits the assembly
+// for all the conditionals in the chain, and finally sets up the program counter of
+// the DCPUState to the instruction after the last IF in the chain.
+void handleConditionalGeneration(Assembler& s, CodeGenState& cgs, DCPUState& st) {
+	uint16_t savedPC = st.info.pc;
+
+	// Skip forward and find the end of the conditional block
+	// Keep track of the cycle cost of the first test failing
+	uint32_t numSkipped = 0;
+	while(isConditionalInsn(st.decodeInsn())) numSkipped++;
+
+	// Set up code emission state
+	cgs.condEndLbl = s.newLabel();
+
+	// Reset PC and start emitting code
+	st.info.pc = savedPC;
+	DCPUInsn inst;
+	while(isConditionalInsn(inst = st.decodeInsn())) {
+		savedPC = st.info.pc;
+		// Here, numSkipped determines the cycles that failing the test
+		// and jumping costs. Since the first conditional will cost the
+		// most, we just decrement the cost for each one, and the cost when
+		// we reach the last conditional in the line will be 1.
+		emitConditional(s, inst, cgs, numSkipped--);
+	}
+	
+	// Restore PC to first non-conditional instruction and set up parameters
+	st.info.pc = savedPC;
+	cgs.bindCtr = 1;
 }
 
 void JITProcessor::generateCode() {
@@ -343,45 +529,148 @@ void JITProcessor::generateCode() {
 
 	// Create storage for the emitted instructions
 	AsmJit::Assembler buf;
+	CodeGenState state;
+	state.bindCtr = -1;
 	
 	// Compile until we hit the next jump instruction
 	DCPUInsn inst;
 	uint32_t cost = 0;
 	bool assembling = true;
-	m_ctx.emitHeader(buf);
+	emitHeader(buf);
 	while(assembling) {
 		inst = m_state.decodeInsn();
 		cost += inst.cycleCost;
+		if(state.bindCtr == 0) {
+			state.bindCtr = -1;
+			buf.bind(state.condEndLbl);
+		} else if(state.bindCtr > 0) {
+			state.bindCtr--;
+		}
+		// Check for external opcodes
 		switch(inst.op) {
-			case DO_SET:
-				emitSET(buf, inst, m_ctx);
-				if(inst.b.val == DCPUValue::VT_PC) {
-					// For jump instructions, just set PC and
-					// return
-					assembling = false;
-				}
-				break;
-			case DO_ADD:
-				emitADD(buf, inst, m_ctx);
-				break;
-			case DO_SUB:
-				emitSUB(buf, inst, m_ctx);
-				break;
-			// Hardware interaction is done externally for now
+			// Hardware interaction is done externally for now. Just set eax to 1 and
+			// return.
 			case DO_HWI:
 			case DO_HWQ:
 			case DO_HWN:
+				buf.mov(eax, 1);
+				buf.ret();
 				assembling = false;
-				break;
+				continue;
 			default:
 				break;
 		}
+		emitDCPUSetPC(buf, inst.offset);
+		emitCostCycles(buf, inst.cycleCost);
+		emitCycleHook(buf, inst.cycleCost);
+		if(isConditionalInsn(inst)) {
+			m_state.info.pc = inst.offset;
+			handleConditionalGeneration(buf, state, m_state);
+			continue;
+		}
+		switch(inst.op) {
+			case DO_SET:
+				emitSET(buf, inst, state);
+				if(inst.b.val == DCPUValue::VT_PC) {
+					if(state.bindCtr == -1) {
+						// For jump instructions, just set PC and
+						// return
+						assembling = false;
+					} else {
+						// Make sure that the skipped instruction still emits a ret
+						emitFooter(buf);
+					}
+				}
+				break;
+			case DO_ADD:
+				emitADD(buf, inst, state);
+				break;
+			case DO_SUB:
+				emitSUB(buf, inst, state);
+				break;
+			case DO_MUL:
+				emitMUL(buf, inst, state);
+				break;
+			case DO_MLI:
+				emitMLI(buf, inst, state);
+				break;
+			case DO_DIV:
+				emitDIV(buf, inst, state);
+				break;
+			case DO_DVI:
+				emitDVI(buf, inst, state);
+				break;
+			case DO_MOD:
+				emitMOD(buf, inst, state);
+				break;
+			case DO_MDI:
+				emitMDI(buf, inst, state);
+				break;
+			case DO_AND:
+				emitAND(buf, inst, state);
+				break;
+			case DO_BOR:
+				emitBOR(buf, inst, state);
+				break;
+			case DO_XOR:
+				emitXOR(buf, inst, state);
+				break;
+			case DO_SHR:
+				emitSHR(buf, inst, state);
+				break;
+			case DO_ASR:
+				emitASR(buf, inst, state);
+				break;
+			case DO_SHL:
+				emitSHL(buf, inst, state);
+				break;
+			case DO_STI:
+				emitSTI(buf, inst, state);
+				if(inst.b.val == DCPUValue::VT_PC) {
+					if(state.bindCtr == -1) {
+						assembling = false;
+					} else {
+						// Make sure that the skipped instruction still emits a ret
+						emitFooter(buf);
+					}
+				}
+				break;
+			case DO_STD:
+				emitSTD(buf, inst, state);
+				if(inst.b.val == DCPUValue::VT_PC) {
+					if(state.bindCtr == -1) {
+						assembling = false;
+					} else {
+						// Make sure that the skipped instruction still emits a ret
+						emitFooter(buf);
+					}
+				}
+				break;
+			case DO_INT:
+				break;
+			case DO_IAG:
+				break;
+			case DO_JSR:
+				break;
+			case DO_IAS:
+				break;
+			case DO_RFI:
+				break;
+			case DO_IAQ:
+				break;
+			default:
+				assembling = false;
+				break;
+		}
 	}
-	m_ctx.emitFooter(buf);
+	if(state.bindCtr >= 0) {
+		buf.bind(state.condEndLbl);
+	}
+	emitFooter(buf);
 	
 	// Store the function in cache and restore the program counter
 	m_codeCache[oldPC] = function_cast<dcpu64Func>(buf.make());
-	m_chunkCosts[oldPC] = cost;
+	m_chunkCosts[oldPC] = (cost == 0) ? 1 : cost;
 	m_cacheAddrs.push_back(oldPC);
 	m_state.info.pc = oldPC;
 }
