@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <list>
+#include <vector>
 
 struct DCPUState;
 
@@ -43,18 +43,26 @@ struct DCPUInsn {
 	uint8_t cycleCost;
 };
 
+struct DCPUHardwareInformation {
+	uint32_t hwID;
+	uint32_t hwManufacturer;
+	uint16_t hwRevision;
+};
+
 // Hardware base class
 struct DCPUHardwareDevice {
 	virtual ~DCPUHardwareDevice() {};
 
-	// Hardware device MUST return if it modifies any aspect of the CPU state. Note
+	// Should return the number of cycles it costs to execute this interrupt. Note
 	// that this function will be called from the simulation thread, so make sure
 	// your handler is threadsafe.
-	virtual uint8_t onInterrupt(uint16_t iNum, DCPUState* cpu)=0;
+	virtual uint8_t onInterrupt(DCPUState* cpu)=0;
 	
 	// Hardware device should do nothing but return the cycle cost of the given
 	// interrupt given a DCPUState - DO NOT MODIFY THE PASSED STATE.
 	virtual uint8_t getCyclesForInterrupt(uint16_t iNum, DCPUState* cpu)=0;
+	
+	virtual DCPUHardwareInformation getInformation();
 };
 
 // State of the DCPU for passing to assembler routines
@@ -90,7 +98,7 @@ struct DCPUState {
 	uint8_t interruptQueue[256];
 	
 	// Hardware
-	std::list<DCPUHardwareDevice*> hardware;
+	std::vector<DCPUHardwareDevice*> hardware;
 	
 	// Threading and state tracking stuff
 	uint64_t elapsed; // Total elapsed cycles

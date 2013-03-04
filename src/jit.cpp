@@ -103,7 +103,28 @@ void dcpuEmitCarry(AsmJit::Assembler& s, uint16_t value) {
 	s.pop(eax);
 }
 
+// Cycle hook - use this to check the interrupt status. If an interrupt is
+// fired, this should return a nonzero value and set up everything for the
+uint8_t cycleHook(DCPURegisterInfo* info) {
+	DCPUState* state = (DCPUState*)(info->statePtr);
+	return 0;
+}
+
 void emitCycleHook(AsmJit::Assembler& s, uint8_t cycles) {
+	// Emit a call to the cycle hook function
+	s.call((void*)&cycleHook);
+	
+	// Check for results
+	Label okay = s.newLabel();
+	s.cmp(rax, 0);
+	s.je(okay);
+	
+	// Here, the cycle hook returned a nonzero value
+	// so we should just return
+	s.ret();
+	
+	// Ignore
+	s.bind(okay);
 }
 
 void emitHeader(AsmJit::Assembler& s) {
@@ -216,16 +237,26 @@ void emitCostCycles(Assembler& s, T &num) {
 	s.sub(qword_ptr(rdi, 24), num);
 }
 
-void hardwareHook(DCPURegisterInfo* regInfo) {
+// Proxy calls for the HWI, HWQ, and HWN instructions
+
+uint16_t hardwareNumberQuery(DCPURegisterInfo* regInfo) {
 	DCPUState* state = (DCPUState*)(regInfo->statePtr);
+	return state->hardware.size();
 }
 
-// This should be called after an insn is run
-void callHardwareHook(Assembler& s) {
-	// Special param handling is unnecessary because the x86-64 calling
-	// convention has its first param passed in rdi, and the CPU's
-	// register info pointer (the only param) is always kept in RDI for
-	// the purposes of this routine. Hence, just call the hardware hook.
+void hardwareQuery(DCPURegisterInfo* regInfo, uint16_t n) {
+	DCPUState* state = (DCPUState*)(regInfo->statePtr);
+	DCPUHardwareInformation info = state->hardware[n]->getInformation();
+	regInfo->a = info.hwID & 0x0000FFFF;
+	regInfo->b = (info.hwID & 0xFFFF0000) >> 16;
+	regInfo->c = info.hwRevision;
+	regInfo->x = info.hwManufacturer & 0x0000FFFF;
+	regInfo->y = (info.hwManufacturer & 0xFFFF0000) >> 16;
+}
+
+uint16_t hardwareInterrupt(DCPURegisterInfo* regInfo, uint16_t n) {
+	DCPUState* state = (DCPUState*)(regInfo->statePtr);
+	return state->hardware[n]->onInterrupt(state);
 }
 
 JITProcessor::JITProcessor() {
@@ -413,6 +444,32 @@ void emitASR(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
 void emitSHL(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
 }
 
+void emitADX(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+	emitDCPUFetch(s, inst.a, eax);
+	emitDCPUFetch(s, inst.b, ebx);
+	s.add(ebx, eax);
+	s.mov(word_ptr(rdi, 2*10), 0);
+	Label nocarry = s.newLabel();
+	s.jnc(nocarry);
+	s.mov(word_ptr(rdi, 2*10), 1);
+	s.bind(nocarry);
+	s.add(ebx, word_ptr(rdi, 2*10));
+	
+	Label done = s.newLabel();
+	s.jnc(done);
+
+	s.mov(word_ptr(rdi, 2*10), 1);
+	s.bind(done);
+	emitDCPUPut(s, inst.b, ebx);
+}
+
+void emitSBX(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+	emitDCPUFetch(s, inst.a, eax);
+	emitDCPUFetch(s, inst.b, ebx);
+	s.add(ebx, eax);
+	s.add(ebx, word_ptr(rdi, 2*10));
+}
+
 void emitSTI(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
 	emitSET(s, inst, cgs);
 	s.add(word_ptr(rdi, 12), 1);
@@ -423,6 +480,29 @@ void emitSTD(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
 	emitSET(s, inst, cgs);
 	s.sub(word_ptr(rdi, 12), 1);
 	s.sub(word_ptr(rdi, 14), 1);
+}
+
+void emitHWN(Assembler& s, DCPUInsn inst, CodeGenState cgs) {
+	s.call((void*)&hardwareNumberQuery);
+	emitDCPUPut(s, inst.a, eax);
+}
+
+void emitHWQ(Assembler& s, DCPUInsn inst, CodeGenState cgs) {
+	emitDCPUFetch(s, inst.a, rsi);
+	s.call((void*)&hardwareQuery);
+	emitDCPUPut(s, inst.a, eax);
+}
+
+void emitHWI(Assembler& s, DCPUInsn inst, CodeGenState cgs) {
+	// We have to return after executing an interrupt, because they
+	// can modify arbitrary addresses or registers (including PC). Therefore
+	// we need to go back to the JITProcessor wrapper so code invalidation
+	// is handled properly.
+	emitDCPUFetch(s, inst.a, rsi);
+	s.call((void*)&hardwareInterrupt);
+	emitCostCycles(s, eax);
+	emitDCPUSetPC(s, inst.nextOffset);
+	emitFooter(s);
 }
 
 void emitConditional(Assembler& s, DCPUInsn inst, CodeGenState& cgs, uint32_t skipCost) {
@@ -646,6 +726,12 @@ void JITProcessor::generateCode() {
 					}
 				}
 				break;
+			case DO_ADX:
+				emitADX(buf, inst, state);
+				break;
+			case DO_SBX:
+				emitSBX(buf, inst, state);
+				break;
 			case DO_INT:
 				break;
 			case DO_IAG:
@@ -657,6 +743,15 @@ void JITProcessor::generateCode() {
 			case DO_RFI:
 				break;
 			case DO_IAQ:
+				break;
+			case DO_HWN:
+				emitHWN(buf, inst, state);
+				break;
+			case DO_HWI:
+				emitHWI(buf, inst, state);
+				break;
+			case DO_HWQ:
+				emitHWQ(buf, inst, state);
 				break;
 			default:
 				assembling = false;

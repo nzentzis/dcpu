@@ -23,7 +23,7 @@ int main(int argc, char **argv) {
 	proc.getState().loadFromFile(fopen(argv[1], "rb"));
 	printf("Performing measurement...");
 	boost::chrono::high_resolution_clock::time_point start = clk.now();
-	proc.inject(10000);
+	proc.inject(1000000);
 	boost::chrono::high_resolution_clock::time_point end = clk.now();
 	printf("Complete\n");
 	boost::chrono::high_resolution_clock::duration d = end-start;

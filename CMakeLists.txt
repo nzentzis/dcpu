@@ -3,6 +3,7 @@ project(dcpu)
 
 set(CMAKE_DEBUG_POSTFIX "_d")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 
 if(CMAKE_BUILD_TYPE STREQUAL "")
 	set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Choose the type of build, options are: None (CMAKE_CXX_FLAGS or CMAKE_C_FLAGS used) Debug Release RelWithDebInfo MinSizeRel." FORCE)
@@ -20,7 +21,7 @@ if(USE_CLANG)
 endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-	set(CMAKE_CXX_FLAGS "-O0 -pg")
+	# set(CMAKE_CXX_FLAGS "-O0 -pg")
 endif()
 
 find_package(Boost REQUIRED COMPONENTS system filesystem thread chrono)
