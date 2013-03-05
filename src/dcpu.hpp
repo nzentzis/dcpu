@@ -34,6 +34,7 @@ struct DCPUValue {
 	ValueType val;
 	Register reg; // Only for VT_REGISTER-VT_INDIRECT_REGISTER_OFFSET
 	uint16_t nextWord;
+	bool b; // false if A value, true if B value
 };
 
 struct DCPUInsn {
@@ -68,18 +69,18 @@ struct DCPUHardwareDevice {
 // State of the DCPU for passing to assembler routines
 struct DCPURegisterInfo {
 	// Registers
-	uint16_t a, b, c, x, y, z, i, j;
-	uint16_t pc, sp, ex, ia;
+	uint16_t a, b, c, x, y, z, i, j;	// Offset 0x00
+	uint16_t pc, sp, ex, ia;		// Offset 0x10
 	
-	// Cycle stuff
+	// Cycle stuff				   Offset 0x18
 	int64_t cycles; // Number of available cycles
 	
 	// Memory
-	uint16_t *memory;
-	uint8_t enableInterrupts;
+	uint16_t *memory;			// Offset 0x20
+	uint8_t enableInterrupts;		// Offset 0x28 (pointers are 64-bit on x86-64)
 
 	// External state
-	void* statePtr;
+	void* statePtr;				// Offset 0x29
 } __attribute__((packed));
 
 // Full representation of the state of an emulated DCPU

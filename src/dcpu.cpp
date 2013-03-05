@@ -26,6 +26,8 @@ DCPUInsn DCPUState::decodeInsn() {
 	uint8_t baseOpcode = (opc & 0x1f);
 	uint8_t fieldA = (opc & 0xfc00) >> 10;
 	uint8_t fieldB = (opc & 0x03e0) >> 5;
+	insn.a.b = false;
+	insn.b.b = true;
 	
 	// Process field A
 	switch(fieldA) {
