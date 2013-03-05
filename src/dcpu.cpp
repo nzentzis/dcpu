@@ -360,3 +360,20 @@ void DCPUState::loadFromFile(FILE* fptr, bool translate) {
 		}
 	}
 }
+
+// Write the memory image of the DCPU into the passed file handle. If
+// translate is set, write in big-endian format.
+void DCPUState::writeToFile(FILE* fptr, bool translate) {
+	uint16_t word;
+	uint8_t t1, t2;
+	unsigned int i;
+	for(i=0;i<0x10000;i++) {
+		word = info.memory[i];
+		if(translate) {
+			t1 = word & 0xFF;
+			t2 = (word >> 8) & 0xff;
+			word = (t1 << 8) | t2;
+		}
+		fwrite(&word, 2, 1, fptr);
+	}
+}

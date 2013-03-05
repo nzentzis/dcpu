@@ -1,0 +1,15 @@
+<test>
+	<source>set.asm</source>
+	<name>Register Set</name>
+	<cycles>1000</cycles>
+	<results>
+		<register name="a" value="69"/>
+		<register name="b" value="68"/>
+		<register name="c" value="67"/>
+		<register name="x" value="66"/>
+		<register name="y" value="65"/>
+		<register name="z" value="64"/>
+		<register name="i" value="63"/>
+		<register name="j" value="62"/>
+	</results>
+</test>

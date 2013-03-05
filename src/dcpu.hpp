@@ -88,6 +88,7 @@ struct DCPUState {
 	~DCPUState();
 	DCPUInsn decodeInsn();
 	void loadFromFile(FILE* fptr, bool translate);
+	void writeToFile(FILE* fptr, bool translate);
 	uint16_t getWord();
 	uint16_t& operator[](uint16_t addr);
 	

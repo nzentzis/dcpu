@@ -5,9 +5,13 @@
 #include "dcpu.hpp"
 #include "jit.hpp"
 #include <boost/chrono.hpp>
+#include <boost/thread.hpp>
 #include <boost/program_options.hpp>
 
 #define BENCHMARK_CYCLES 100000000
+
+// The smallest number of cycles that will be executed at a time
+#define CYCLE_ATOM 100
 
 using namespace std;
 namespace po = boost::program_options;
@@ -36,8 +40,10 @@ int main(int argc, char **argv) {
 		("bench", "Enable benchmarking mode. No hardware is attached, and statistics on emulation speed will be printed when emulation is complete")
 		("profile", "Enable profiling mode. In profiling mode, tracepoints are generated in the generated machine code and a file with per-instruction statistics will be emitted")
 		("test", "Enable testing mode. After emulation, the machine state will be dumped to the console")
+		("test-mem", "Enable memory dumps after emulation in testing mode")
+		("dump-file", po::value<std::string>()->default_value("dcpu.mem"), "The file to dump memory to")
 		("cycles", po::value<uint64_t>()->default_value(0), "Limit the number of cycles the emulator can run for")
-		("speed", "Maximum speed in KHz the emulated DCPU will run at")
+		("speed", po::value<float>(), "Maximum speed in KHz the emulated DCPU will run at")
 		("help", "Print a help message")
 		("image", po::value<std::string>(), "The program image to load")
 		("little-endian,l", "Load a little-endian input file instead of a big-endian one")
@@ -59,7 +65,14 @@ int main(int argc, char **argv) {
 	JITProcessor proc;
 	
 	// Load the program
-	proc.getState().loadFromFile(fopen(vmap["image"].as<std::string>().c_str(), "rb"), vmap.count("little-endian")==0);
+	FILE* loadFile = fopen(vmap["image"].as<std::string>().c_str(), "rb");
+	if(loadFile != NULL) {
+		proc.getState().loadFromFile(loadFile, vmap.count("little-endian")==0);
+		fclose(loadFile);
+	} else {
+		fprintf(stderr, "ERROR: Cannot open input file\n");
+		return 1;
+	}
 	
 	// Attach hardware to the processor
 	if(vmap.count("bench") == 0) { // benchmarking mode disables all hardware and forces a limited number of cycles
@@ -88,11 +101,33 @@ int main(int argc, char **argv) {
 	}
 	
 	// Run the processor
-	int64_t cycleLimit = -1;
-	if(vmap.count("cycles")) {
-		cycleLimit = vmap["cycles"].as<uint64_t>();
-		proc.inject(cycleLimit);
+	if(vmap.count("speed")) {
+		// The speed is limited, so we have to do more complex cycle limiting
+		float maxSpeed = vmap["speed"].as<float>()*1000;
+		boost::chrono::high_resolution_clock::time_point nextCycle;
+		boost::chrono::duration<double, boost::ratio<1> > cycleTime(1.0f/maxSpeed);
+		chron::high_resolution_clock::duration clkCycles =
+			chron::round<chron::high_resolution_clock::duration>(cycleTime);
+		if(vmap.count("cycles")) {
+			int64_t cycles = vmap["cycles"].as<uint64_t>();
+			for(;cycles > 0;cycles -= CYCLE_ATOM) {
+				nextCycle = clk.now()+(clkCycles*CYCLE_ATOM);
+				proc.inject(CYCLE_ATOM);
+				boost::this_thread::sleep_until(nextCycle);
+			}
+		} else {
+			while(true) {
+				nextCycle = clk.now()+(clkCycles*CYCLE_ATOM);
+				proc.inject(CYCLE_ATOM);
+				boost::this_thread::sleep_until(nextCycle);
+			}
+		}
 	} else {
+		if(vmap.count("cycles")) {
+			proc.inject(vmap["cycles"].as<uint64_t>());
+		} else {
+			while(true) proc.inject(10000000);
+		}
 	}
 
 	if(benchmarking) {
@@ -120,5 +155,14 @@ int main(int argc, char **argv) {
 		printf("PC = %04x\n", i.pc);
 		printf("EX = %04x\n", i.ex);
 		printf("IA = %04x\n", i.ia);
+	}
+	if(vmap.count("test-mem")) {
+		FILE* dump = fopen(vmap["dump-file"].as<std::string>().c_str(), "wb");
+		if(dump == NULL) {
+			fprintf(stderr, "ERROR: Cannot open memory dump file for writing\n");
+			return 1;
+		}
+		proc.getState().writeToFile(dump, true);
+		fclose(dump);
 	}
 }
