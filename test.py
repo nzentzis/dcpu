@@ -208,14 +208,14 @@ for ctest in testFiles:
 	failedRegs = []
 	for i in resultConstraints:
 		if(regs[i[0]] != i[1]):
-			failedRegs.append(i[0])
+			failedRegs.append((i[0], i[1], regs[i[0]]))
 	if(len(failedRegs) > 0):
 		print("\tFailed - Register values invalid")
 		print("\t\tName - Correct - Actual")
 		for i in failedRegs:
-			rn = i.toupper()
-			correct = resultConstraints[i]
-			print("\t\t%4s - 0x%04x  - 0x%04x" % (i,correct,regs[i]))
+			rn = i[0].upper()
+			correct = i[1]
+			print("\t\t%4s - 0x%04x  - 0x%04x" % (i[0],correct,i[2]))
 		failed.append((ctest,name))
 		continue
 	if(len(memoryConstraints) > 0):
