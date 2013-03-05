@@ -111,6 +111,7 @@ uint8_t cycleHook(DCPURegisterInfo* info) {
 }
 
 void emitCycleHook(AsmJit::Assembler& s, uint8_t cycles) {
+	/*
 	// Emit a call to the cycle hook function
 	s.call((void*)&cycleHook);
 	
@@ -125,6 +126,8 @@ void emitCycleHook(AsmJit::Assembler& s, uint8_t cycles) {
 	
 	// Ignore
 	s.bind(okay);
+	*/
+	s.nop();
 }
 
 void emitHeader(AsmJit::Assembler& s) {
@@ -144,14 +147,17 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg) {
 			s.movzx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
 			break;
 		case DCPUValue::VT_INDIRECT_REGISTER:
-			s.mov(rsi, word_ptr(rdi, 12));
-			s.mov(rdx, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+			s.mov(rsi, qword_ptr(rdi, 32));
+			s.movzx(rdx, word_ptr(rdi, 2*((uint8_t)(r.reg))));
 			s.mov(reg, word_ptr(rsi, rdx));
 			break;
 		case DCPUValue::VT_INDIRECT_REGISTER_OFFSET:
-			s.mov(rsi, word_ptr(rdi, 12));
-			s.mov(rdx, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+			s.mov(rsi, qword_ptr(rdi, 32));
+			s.movzx(rdx, word_ptr(rdi, 2*((uint8_t)(r.reg))));
 			s.add(rdx, r.nextWord);
+			// We have to multiply by two so we get the byte address
+			// instead of the word address
+			s.shl(rdx, 1);
 			s.mov(reg, word_ptr(rsi, rdx));
 			break;
 		case DCPUValue::VT_PUSHPOP:	// In this case, it's a pop
@@ -159,9 +165,8 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg) {
 		case DCPUValue::VT_PEEK:
 			s.mov(rdx, 0xffff);
 			s.mov(rcx, word_ptr(rdi, 18));
-			s.shl(rcx, 1);
 			s.sub(rdx, rcx);
-			s.mov(rsi, word_ptr(rdi, 32));
+			s.mov(rsi, qword_ptr(rdi, 32));
 			s.mov(word_ptr(rsi, rdx), reg);
 			break;
 		case DCPUValue::VT_PICK:
@@ -176,7 +181,7 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg) {
 			s.mov(reg, word_ptr(rdi, 2*10));
 			break;
 		case DCPUValue::VT_MEMORY:
-			s.mov(rsi, word_ptr(rdi, 12));
+			s.mov(rsi, qword_ptr(rdi, 32));
 			s.mov(reg, word_ptr(rsi, 2*r.nextWord));
 			break;
 		case DCPUValue::VT_LITERAL:
@@ -201,11 +206,18 @@ void emitDCPUPut(Assembler& s, DCPUValue r, T &reg) {
 			s.mov(word_ptr(rdi, 2*((uint8_t)(r.reg))), reg);
 			break;
 		case DCPUValue::VT_INDIRECT_REGISTER:
-			s.mov(rsi, word_ptr(rdi, 12));
-			s.mov(rdx, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+			s.mov(rsi, qword_ptr(rdi, 32));
+			s.movzx(rdx, word_ptr(rdi, 2*((uint8_t)(r.reg))));
 			s.mov(word_ptr(rsi, rdx), reg);
 			break;
 		case DCPUValue::VT_INDIRECT_REGISTER_OFFSET:
+			s.mov(rsi, qword_ptr(rdi, 32));
+			s.movzx(rdx, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+			s.add(rdx, r.nextWord);
+			// We have to multiply by two so we get the byte address
+			// instead of the word address
+			s.shl(rdx, 1);
+			s.mov(word_ptr(rsi, rdx), reg);
 			break;
 		case DCPUValue::VT_PUSHPOP:	// In this case, it's a push
 			break;
@@ -223,7 +235,7 @@ void emitDCPUPut(Assembler& s, DCPUValue r, T &reg) {
 			s.mov(word_ptr(rdi, 2*10), reg);
 			break;
 		case DCPUValue::VT_MEMORY:
-			s.mov(rsi, word_ptr(rdi, 12));
+			s.mov(rsi, qword_ptr(rdi, 32));
 			s.mov(word_ptr(rsi, r.nextWord*2), reg);
 			break;
 		case DCPUValue::VT_LITERAL:
