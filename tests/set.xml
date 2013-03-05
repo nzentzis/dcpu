@@ -11,5 +11,6 @@
 		<register name="z" value="64"/>
 		<register name="i" value="63"/>
 		<register name="j" value="62"/>
+		<memory addr="1000" value="12"/>
 	</results>
 </test>

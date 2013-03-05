@@ -6,5 +6,6 @@ set y, 65
 set z, 64
 set i, 63
 set j, 62
+set [1000], 12
 :loop
 set pc, loop

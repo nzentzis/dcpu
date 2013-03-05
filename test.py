@@ -2,7 +2,7 @@
 
 import subprocess, re, os, os.path
 import xml.etree.ElementTree as ET
-import sys, tempfile, shutil
+import sys, tempfile, shutil, struct
 
 DAS_URLS = {"linux": "https://github.com/downloads/jonpovey/das/das-v0.16.tar.gz",
 		"mac": "https://github.com/downloads/jonpovey/das/bluedas-v0.13-OSX-64bit.tar.gz",
@@ -154,12 +154,19 @@ for ctest in testFiles:
 	cycles = cycles.text
 	resultRegs = results.findall("register")
 	resultConstraints = []
+	memoryConstraints = []
 	for i in resultRegs:
 		attrs = i.attrib
 		if('name' not in attrs or 'value' not in attrs):
 			print("\tWarning: Invalid result constraint")
 			continue
 		resultConstraints.append((attrs['name'], eval(attrs["value"])))
+	for i in results.findall("memory"):
+		attrs = i.attrib
+		if('addr' not in attrs or 'value' not in attrs):
+			print("\tWarning: Invalid memory constraint")
+			continue
+		memoryConstraints.append((eval(attrs['addr']), eval(attrs['value'])))
 	
 	# Try assembling the source file
 	binPth = assembleFile(source)
@@ -170,20 +177,25 @@ for ctest in testFiles:
 	
 	# Run the test
 	try:
-		emu = subprocess.check_output(["./dcpu", "--test", "--cycles", cycles, binPth])
+		params = ["./dcpu", "--test", "--cycles", cycles]
+		if(len(memoryConstraints) > 0):
+			params += ["--test-mem", "--dump-file", os.path.join(assemblyDir, ctest+".memdmp")]
+		params.append(binPth)
+		emu = subprocess.check_output(params)
 	except subprocess.CalledProcessError:
 		print("\tFailed - Emulator returned invalid retcode")
 		failed.append((ctest,name))
 		continue
-	except OSError:
+	except OSError as e:
 		print("\tFailed - Cannot find emulator binary")
+		print(e)
 		failed.append((ctest,name))
 		continue
 	
 	# Parse the output
-	emu = emu.decode("utf-8")
+	emu = emu.decode("ascii")
 	lines = emu.splitlines()
-	linePattern = re.compile("([A-Z]+)\s*=([0-9a-f]{4})")
+	linePattern = re.compile("([A-Z]+)\s*=\s*([0-9a-f]{4})")
 	regs = {}
 	for i in lines:
 		m = linePattern.match(i)
@@ -199,13 +211,30 @@ for ctest in testFiles:
 			failedRegs.append(i[0])
 	if(len(failedRegs) > 0):
 		print("\tFailed - Register values invalid")
+		print("\t\tName - Correct - Actual")
 		for i in failedRegs:
-			print("\t\tName - Correct - Actual")
 			rn = i.toupper()
 			correct = resultConstraints[i]
 			print("\t\t%4s - 0x%04x  - 0x%04x" % (i,correct,regs[i]))
 		failed.append((ctest,name))
 		continue
+	if(len(memoryConstraints) > 0):
+		# Read the memory dump file
+		memdump = open(os.path.join(assemblyDir, ctest+".memdmp"), "rb").read()
+
+		# Parse the data into shorts
+		mem = struct.unpack(">"+('H'*(len(memdump)//2)), memdump)
+		failedMem = []
+		for i in memoryConstraints:
+			if(mem[i[0]] != i[1]):
+				failedMem.append(i)
+		if(len(failedMem) > 0):
+			print("\tFailed - Memory Values Invalid")
+			print("\t\tAddr - Correct - Actual")
+			for i in failedMem:
+				print("\t\t%04x - %04x    - %04x" % (i[0], i[1], mem[i[0]]))
+			failed.append((ctest, name))
+			continue
 	
 	# Done!
 	print("\tPassed: %s" % name)
