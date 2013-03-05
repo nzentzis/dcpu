@@ -1,0 +1,13 @@
+<test>
+	<source>add.asm</source>
+	<name>Basic Addition</name>
+	<cycles>1000</cycles>
+	<results>
+		<register name="a" value="7"/>
+		<register name="b" value="0"/>
+		<register name="c" value="0"/>
+		<register name="x" value="0"/>
+		<register name="y" value="0"/>
+		<register name="z" value="0"/>
+	</results>
+</test>

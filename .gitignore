@@ -7,3 +7,4 @@ compile_commands.json
 Makefile
 test.bin
 dcpu
+.dcpu_test_cache

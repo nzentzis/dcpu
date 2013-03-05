@@ -1,0 +1,13 @@
+<test>
+	<source>sub.asm</source>
+	<name>Basic Subtraction</name>
+	<cycles>1000</cycles>
+	<results>
+		<register name="a" value="1017"/>
+		<register name="b" value="0"/>
+		<register name="c" value="0"/>
+		<register name="x" value="0"/>
+		<register name="y" value="0"/>
+		<register name="z" value="0"/>
+	</results>
+</test>
