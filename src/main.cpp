@@ -155,6 +155,7 @@ int main(int argc, char **argv) {
 		printf("PC = %04x\n", i.pc);
 		printf("EX = %04x\n", i.ex);
 		printf("IA = %04x\n", i.ia);
+		printf("SP = %04x\n", i.sp);
 	}
 	if(vmap.count("test-mem")) {
 		FILE* dump = fopen(vmap["dump-file"].as<std::string>().c_str(), "wb");
