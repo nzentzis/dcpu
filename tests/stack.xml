@@ -1,0 +1,14 @@
+<test>
+	<source>stack.asm</source>
+	<name>Stack Operations</name>
+	<cycles>2000</cycles>
+	<results>
+		<register name="a" value="9"/>
+		<register name="b" value="8"/>
+		<register name="c" value="7"/>
+		<register name="x" value="7"/>
+		<register name="y" value="0"/>
+		<register name="z" value="0"/>
+		<register name="sp" value="0xfffd"/>
+	</results>
+</test>

@@ -141,15 +141,23 @@ void emitFooter(AsmJit::Assembler& s) {
 
 // Fetch the value in the specified register into eax
 template<typename T>
-void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg) {
+void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true) {
 	switch(r.val) {
 		case DCPUValue::VT_REGISTER:
-			s.movzx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+			if(zx) {
+				s.movzx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+			} else {
+				s.mov(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+			}
 			break;
 		case DCPUValue::VT_INDIRECT_REGISTER:
 			s.mov(rsi, qword_ptr(rdi, 32));
 			s.movzx(rdx, word_ptr(rdi, 2*((uint8_t)(r.reg))));
-			s.mov(reg, word_ptr(rsi, rdx));
+			if(zx) {
+				s.movzx(reg, word_ptr(rsi, rdx));
+			} else {
+				s.mov(reg, word_ptr(rsi, rdx));
+			}
 			break;
 		case DCPUValue::VT_INDIRECT_REGISTER_OFFSET:
 			s.mov(rsi, qword_ptr(rdi, 32));
@@ -158,31 +166,88 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg) {
 			// We have to multiply by two so we get the byte address
 			// instead of the word address
 			s.shl(rdx, 1);
-			s.mov(reg, word_ptr(rsi, rdx));
+			if(zx) {
+				s.movzx(reg, word_ptr(rsi, rdx));
+			} else {
+				s.mov(reg, word_ptr(rsi, rdx));
+			}
 			break;
-		case DCPUValue::VT_PUSHPOP:	// In this case, it's a pop
+		case DCPUValue::VT_PUSHPOP:
+			s.mov(rdx, 0xffff);
+			if(r.b) { // Push - [--SP]
+				// Update and store the stack pointer
+				s.movzx(rcx, word_ptr(rdi, 0x12));
+				s.dec(rcx);
+				s.mov(word_ptr(rdi, 0x12), cx);
+				s.and_(rcx, rdx);
+				
+				// Convert to a byte address
+				s.shl(rcx, 1);
+
+				// Now read the memory - for science
+				s.mov(rsi, qword_ptr(rdi, 0x20));
+				if(zx) {
+					s.movzx(reg, word_ptr(rsi, rcx));
+				} else {
+					s.mov(reg, word_ptr(rsi, rcx));
+				}
+			} else { // Pop - [SP++]
+				// Figure out the word address
+				s.movzx(rcx, word_ptr(rdi, 0x12));
+				
+				// Convert to byte address
+				s.shl(rcx, 1);
+				
+				// Read memory
+				s.mov(rsi, qword_ptr(rdi, 0x20));
+				if(zx) {
+					s.movzx(reg, word_ptr(rsi, rcx));
+				} else {
+					s.mov(reg, word_ptr(rsi, rcx));
+				}
+				
+				// Update SP
+				s.shr(rcx, 1);
+				s.inc(rcx);
+				s.mov(word_ptr(rdi, 0x12), cx);
+			}
 			break;
 		case DCPUValue::VT_PEEK:
 			s.mov(rdx, 0xffff);
-			s.mov(rcx, word_ptr(rdi, 18));
-			s.sub(rdx, rcx);
+			s.movzx(rcx, word_ptr(rdi, 0x12));
+			s.shl(rcx, 1);
 			s.mov(rsi, qword_ptr(rdi, 32));
-			s.mov(word_ptr(rsi, rdx), reg);
+			if(zx)
+				s.movzx(reg, word_ptr(rsi, rcx));
+			else
+				s.mov(reg, word_ptr(rsi, rcx));
 			break;
 		case DCPUValue::VT_PICK:
 			break;
 		case DCPUValue::VT_SP:
-			s.mov(reg, word_ptr(rdi, 2*9));
+			if(zx)
+				s.movzx(reg, word_ptr(rdi, 2*9));
+			else
+				s.mov(reg, word_ptr(rdi, 2*9));
 			break;
 		case DCPUValue::VT_PC:
-			s.mov(reg, word_ptr(rdi, 2*8));
+			if(zx)
+				s.movzx(reg, word_ptr(rdi, 2*8));
+			else
+				s.mov(reg, word_ptr(rdi, 2*8));
 			break;
 		case DCPUValue::VT_EX:
-			s.mov(reg, word_ptr(rdi, 2*10));
+			if(zx)
+				s.movzx(reg, word_ptr(rdi, 2*10));
+			else
+				s.mov(reg, word_ptr(rdi, 2*10));
 			break;
 		case DCPUValue::VT_MEMORY:
 			s.mov(rsi, qword_ptr(rdi, 32));
-			s.mov(reg, word_ptr(rsi, 2*r.nextWord));
+			if(zx)
+				s.movzx(reg, word_ptr(rsi, 2*r.nextWord));
+			else
+				s.mov(reg, word_ptr(rsi, 2*r.nextWord));
 			break;
 		case DCPUValue::VT_LITERAL:
 			s.mov(reg, r.nextWord);
@@ -219,7 +284,37 @@ void emitDCPUPut(Assembler& s, DCPUValue r, T &reg) {
 			s.shl(rdx, 1);
 			s.mov(word_ptr(rsi, rdx), reg);
 			break;
-		case DCPUValue::VT_PUSHPOP:	// In this case, it's a push
+		case DCPUValue::VT_PUSHPOP:
+			s.mov(rdx, 0xffff);
+			if(r.b) { // Push - [--SP]
+				// Update and store the stack pointer
+				s.movzx(rcx, word_ptr(rdi, 0x12));
+				s.dec(rcx);
+				s.mov(word_ptr(rdi, 0x12), cx);
+				s.and_(rcx, rdx);
+				
+				// Convert to a byte address
+				s.shl(rcx, 1);
+
+				// Now write
+				s.mov(rsi, qword_ptr(rdi, 0x20));
+				s.mov(word_ptr(rsi, rcx), reg);
+			} else { // Pop - [SP++]
+				// Figure out the word address
+				s.movzx(rcx, word_ptr(rdi, 0x12));
+				
+				// Convert to byte address
+				s.shl(rcx, 1);
+				
+				// Write memory
+				s.mov(rsi, qword_ptr(rdi, 0x20));
+				s.mov(word_ptr(rdi, rcx), reg);
+				
+				// Update SP
+				s.shr(rcx, 1);
+				s.inc(rcx);
+				s.mov(word_ptr(rdi, 0x12), cx);
+			}
 			break;
 		case DCPUValue::VT_PEEK:
 			break;
@@ -345,8 +440,8 @@ void emitSET(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
 		// Shortcircuit
 		emitDCPUPut(s, inst.b, inst.a.nextWord);
 	} else {
-		emitDCPUFetch(s, inst.a, eax);
-		emitDCPUPut(s, inst.b, eax);
+		emitDCPUFetch(s, inst.a, ax, false);
+		emitDCPUPut(s, inst.b, ax);
 	}
 }
 
@@ -652,7 +747,14 @@ void JITProcessor::generateCode() {
 			default:
 				break;
 		}
-		emitDCPUSetPC(buf, inst.offset);
+		
+		// The only time we need to adjust PC is when we encounter an insn
+		// that depends on it, since our code will always run as a block. This
+		// will always hit on the last instruction since we stop assembling
+		// when PC is changed.
+		if(inst.a.val == DCPUValue::VT_PC || inst.b.val == DCPUValue::VT_PC) {
+			emitDCPUSetPC(buf, inst.offset);
+		}
 		emitCostCycles(buf, inst.cycleCost);
 		emitCycleHook(buf, inst.cycleCost);
 		if(isConditionalInsn(inst)) {
