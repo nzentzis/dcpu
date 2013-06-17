@@ -400,8 +400,13 @@ bool JITProcessor::cycle() {
 		generateCode();
 	}
 	
-	// Check for queued cycles
-	uint32_t oldCycles = m_state.info.cycles;
+	// Check for queued cycles. The volatile pointer is a derpy trick to force
+	// gcc to re-fetch the value of m_state.info.cycles from memory, after the
+	// assembled code borks around with it. If it's not declared volatile or if
+	// a pointer isn't used, it'll cache the result in a register and m_state.elapsed
+	// will be 0 all the time.
+	volatile DCPUState* st = &m_state;
+	volatile uint32_t oldCycles = m_state.info.cycles;
 	if(m_state.info.cycles < 0) return false;
 
 	// Execute the code at the instruction pointer
@@ -431,7 +436,7 @@ bool JITProcessor::cycle() {
 			:
 			: "r"(fptr), "r"(&(m_state.info))
 			);
-	m_state.elapsed += (oldCycles-m_state.info.cycles);
+	m_state.elapsed += (((int64_t)oldCycles)-st->info.cycles);
 	return true;
 }
 
