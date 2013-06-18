@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <vector>
+#include <queue>
 
 struct DCPUState;
 
@@ -56,7 +57,10 @@ struct DCPUHardwareDevice {
 
 	// Should return the number of cycles it costs to execute this interrupt. Note
 	// that this function will be called from the simulation thread, so make sure
-	// your handler is threadsafe.
+	// your handler is threadsafe. You may, however, block for however long is needed
+	// to accurately implement the hardware's spec, as (unfortunately) most DCPU HW
+	// interrupts block the processor while they run. The DCPU is locked while each
+	// interrupt is executing.
 	virtual uint8_t onInterrupt(DCPUState* cpu)=0;
 	
 	// Hardware device should do nothing but return the cycle cost of the given
@@ -96,12 +100,15 @@ struct DCPUState {
 	DCPURegisterInfo info;
 	
 	// Interrupt queue
-	uint8_t nInterrupts;
-	uint8_t interruptQueue[256];
+	std::queue<uint16_t> interruptQueue;
 	
 	// Hardware
 	std::vector<DCPUHardwareDevice*> hardware;
 	
 	// Threading and state tracking stuff
 	uint64_t elapsed; // Total elapsed cycles
+	bool ignited;
+
+	// Stuff that's used by the in-ASM callbacks to keep state
+	bool isr;
 };

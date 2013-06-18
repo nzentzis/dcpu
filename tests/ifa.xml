@@ -1,0 +1,15 @@
+<test>
+	<source>ifa.asm</source>
+	<name>IFA (perform next if b>a signed)</name>
+	<cycles>50</cycles>
+	<results>
+		<register name="a" value="1"/>
+		<register name="b" value="2"/>
+		<register name="c" value="0"/>
+		<register name="x" value="0"/>
+		<register name="y" value="0"/>
+		<register name="z" value="0"/>
+		<register name="i" value="0"/>
+		<register name="j" value="0"/>
+	</results>
+</test>

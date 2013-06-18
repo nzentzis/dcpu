@@ -6,6 +6,8 @@
 #include <sys/mman.h>
 #endif
 
+#define DISABLE_CYCLE_HOOK
+
 using namespace AsmJit;
 
 // Stores state that is global throughout the codegen. Deleted
@@ -104,14 +106,27 @@ void dcpuEmitCarry(AsmJit::Assembler& s, uint16_t value) {
 }
 
 // Cycle hook - use this to check the interrupt status. If an interrupt is
-// fired, this should return a nonzero value and set up everything for the
+// fired, this should return a nonzero value.
 uint8_t cycleHook(DCPURegisterInfo* info) {
+	if(!info->enableInterrupts) return 0;
 	DCPUState* state = (DCPUState*)(info->statePtr);
+
+	// Update hardware information
+	// Check the interrupt queue
+	if(!state->interruptQueue.empty()) {
+		// Mark the ISR flag, meaning that when the generated code
+		// returns after we do, the cycle function will catch this
+		// and handle the next interrupt.
+		state->isr = true;
+		return 1;
+	}
 	return 0;
 }
 
 void emitCycleHook(AsmJit::Assembler& s, uint8_t cycles) {
-	/*
+#ifdef DISABLE_CYCLE_HOOK
+	s.nop();
+#else
 	// Emit a call to the cycle hook function
 	s.call((void*)&cycleHook);
 	
@@ -126,8 +141,7 @@ void emitCycleHook(AsmJit::Assembler& s, uint8_t cycles) {
 	
 	// Ignore
 	s.bind(okay);
-	*/
-	s.nop();
+#endif
 }
 
 void emitHeader(AsmJit::Assembler& s) {
@@ -139,13 +153,18 @@ void emitFooter(AsmJit::Assembler& s) {
 	s.ret();
 }
 
-// Fetch the value in the specified register into eax
+// Fetch the value in the specified register into eax. Note that you really really should zero-extend
+// this, as the value will run over from the next register if you don't. If you want sign-extension, that
+// works too. Just note that if you don't zero-extend or sign-extend, the assembler will treat the register
+// in the state structure as a 32-bit value, so you'll get two registers mashed together.
 template<typename T>
-void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true) {
+void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true, bool sx=false) {
 	switch(r.val) {
 		case DCPUValue::VT_REGISTER:
 			if(zx) {
 				s.movzx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+			} else if(sx) {
+				s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
 			} else {
 				s.mov(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
 			}
@@ -155,6 +174,8 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true) {
 			s.movzx(rdx, word_ptr(rdi, 2*((uint8_t)(r.reg))));
 			if(zx) {
 				s.movzx(reg, word_ptr(rsi, rdx));
+			} else if(sx) {
+				s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
 			} else {
 				s.mov(reg, word_ptr(rsi, rdx));
 			}
@@ -168,6 +189,8 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true) {
 			s.shl(rdx, 1);
 			if(zx) {
 				s.movzx(reg, word_ptr(rsi, rdx));
+			} else if(sx) {
+				s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
 			} else {
 				s.mov(reg, word_ptr(rsi, rdx));
 			}
@@ -188,6 +211,8 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true) {
 				s.mov(rsi, qword_ptr(rdi, 0x20));
 				if(zx) {
 					s.movzx(reg, word_ptr(rsi, rcx));
+				} else if(sx) {
+					s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
 				} else {
 					s.mov(reg, word_ptr(rsi, rcx));
 				}
@@ -202,6 +227,8 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true) {
 				s.mov(rsi, qword_ptr(rdi, 0x20));
 				if(zx) {
 					s.movzx(reg, word_ptr(rsi, rcx));
+				} else if(sx) {
+					s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
 				} else {
 					s.mov(reg, word_ptr(rsi, rcx));
 				}
@@ -217,40 +244,56 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true) {
 			s.movzx(rcx, word_ptr(rdi, 0x12));
 			s.shl(rcx, 1);
 			s.mov(rsi, qword_ptr(rdi, 32));
-			if(zx)
+			if(zx) {
 				s.movzx(reg, word_ptr(rsi, rcx));
-			else
+			} else if(sx) {
+				s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+			} else {
 				s.mov(reg, word_ptr(rsi, rcx));
+			}
 			break;
 		case DCPUValue::VT_PICK:
 			break;
 		case DCPUValue::VT_SP:
-			if(zx)
+			if(zx) {
 				s.movzx(reg, word_ptr(rdi, 2*9));
-			else
+			} else if(sx) {
+				s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+			} else {
 				s.mov(reg, word_ptr(rdi, 2*9));
+			}
 			break;
 		case DCPUValue::VT_PC:
-			if(zx)
+			if(zx) {
 				s.movzx(reg, word_ptr(rdi, 2*8));
-			else
+			} else if(sx) {
+				s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+			} else {
 				s.mov(reg, word_ptr(rdi, 2*8));
+			}
 			break;
 		case DCPUValue::VT_EX:
-			if(zx)
+			if(zx) {
 				s.movzx(reg, word_ptr(rdi, 2*10));
-			else
+			} else if(sx) {
+				s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+			} else {
 				s.mov(reg, word_ptr(rdi, 2*10));
+			}
 			break;
 		case DCPUValue::VT_MEMORY:
 			s.mov(rsi, qword_ptr(rdi, 32));
-			if(zx)
+			if(zx) {
 				s.movzx(reg, word_ptr(rsi, 2*r.nextWord));
-			else
+			} else if(sx) {
+				s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+			} else {
 				s.mov(reg, word_ptr(rsi, 2*r.nextWord));
+			}
 			break;
 		case DCPUValue::VT_LITERAL:
-			s.mov(reg, r.nextWord);
+			int16_t value = *((int16_t*)&r.nextWord);
+			s.mov(reg, value);
 			break;
 	}
 }
@@ -437,6 +480,24 @@ bool JITProcessor::cycle() {
 			: "r"(fptr), "r"(&(m_state.info))
 			);
 	m_state.elapsed += (((int64_t)oldCycles)-st->info.cycles);
+	if(m_state.isr) {
+		if(m_state.interruptQueue.size() > 256) {
+			// Halt and Catch Fire
+			m_state.ignited = true;
+			return false;
+		}
+		// Handle one interrupt
+		uint16_t interrupt = m_state.interruptQueue.front();
+		m_state.interruptQueue.pop();
+
+		// Push PC and A to the stack
+		m_state.info.memory[--m_state.info.sp] = m_state.info.pc;
+		m_state.info.memory[--m_state.info.sp] = m_state.info.a;
+
+		// Set up the environment for the interrupt handler
+		m_state.info.a = interrupt;
+		m_state.info.pc = m_state.info.ia;
+	}
 	return true;
 }
 
@@ -617,45 +678,57 @@ void emitHWI(Assembler& s, DCPUInsn inst, CodeGenState cgs) {
 	emitFooter(s);
 }
 
+bool isConditionalSigned(DCPUInsn i) {
+	switch(i.op) {
+		case DO_IFA:
+		case DO_IFU:
+			return true;
+		default:
+			return false;
+	}
+}
+
 void emitConditional(Assembler& s, DCPUInsn inst, CodeGenState& cgs, uint32_t skipCost) {
-	emitDCPUFetch(s, inst.a, eax);
-	emitDCPUFetch(s, inst.b, ebx);
+	bool isSigned = isConditionalSigned(inst);
+	emitDCPUFetch(s, inst.a, eax, !isSigned, isSigned);
+	emitDCPUFetch(s, inst.b, ebx, !isSigned, isSigned);
 	
 	// Compare the two
-	
 	switch(inst.op) {
 		case DO_IFB:
 		case DO_IFC:
-			s.test(eax, ebx);
+			s.test(ebx, eax);
 			break;
 		default:
-			s.cmp(eax,ebx);
+			s.cmp(ebx,eax);
 	}
+
+	// localDontSkip, if jumped to, executes the condition's body
 	Label localDontSkip = s.newLabel();
 	switch(inst.op) {
 		case DO_IFB:
-			s.jz(localDontSkip);
-			break;
-		case DO_IFC:
 			s.jnz(localDontSkip);
 			break;
-		case DO_IFE:
-			s.jne(localDontSkip);
+		case DO_IFC:
+			s.jz(localDontSkip);
 			break;
-		case DO_IFN:
+		case DO_IFE:
 			s.je(localDontSkip);
 			break;
-		case DO_IFG:
-			s.jng(localDontSkip);
+		case DO_IFN:
+			s.jne(localDontSkip);
 			break;
-		case DO_IFA:
-			s.jna(localDontSkip);
+		case DO_IFG: // Unsigned
+			s.ja(localDontSkip);
 			break;
-		case DO_IFL:
-			s.jnl(localDontSkip);
+		case DO_IFA: // Signed
+			s.jg(localDontSkip);
 			break;
-		case DO_IFU:
-			s.jnb(localDontSkip);
+		case DO_IFL: // Unsigned
+			s.jb(localDontSkip);
+			break;
+		case DO_IFU: // Signed
+			s.jl(localDontSkip);
 			break;
 		default:
 			break;

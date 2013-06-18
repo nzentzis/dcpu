@@ -1,0 +1,15 @@
+<test>
+	<source>ifg.asm</source>
+	<name>IFG (if b > a unsigned)</name>
+	<cycles>100</cycles>
+	<results>
+		<register name="a" value="1"/>
+		<register name="b" value="2"/>
+		<register name="c" value="0"/>
+		<register name="x" value="3"/>
+		<register name="y" value="4"/>
+		<register name="z" value="0"/>
+		<register name="i" value="0"/>
+		<register name="j" value="0"/>
+	</results>
+</test>

@@ -1,0 +1,15 @@
+<test>
+	<source>ifc.asm</source>
+	<name>IFC (is b bitwise and a equal to zero)</name>
+	<cycles>100</cycles>
+	<results>
+		<register name="a" value="1"/>
+		<register name="b" value="2"/>
+		<register name="c" value="0"/>
+		<register name="x" value="0xff00"/>
+		<register name="y" value="0"/>
+		<register name="z" value="0"/>
+		<register name="i" value="0"/>
+		<register name="j" value="0"/>
+	</results>
+</test>

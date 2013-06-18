@@ -5,12 +5,12 @@
 #include <boost/phoenix/core/argument.hpp>
 
 DCPUState::DCPUState() {
-	nInterrupts = 0;
 	memset(&info, 0, sizeof(DCPURegisterInfo));
 	info.memory = (uint16_t*)malloc(0x10000*sizeof(uint16_t));
 	elapsed = info.cycles = 0;
 	memset(info.memory, 0, 0x10000*sizeof(uint16_t));
 	info.statePtr = (void*)this;
+	ignited = isr = false;
 }
 
 DCPUState::~DCPUState() {
