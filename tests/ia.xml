@@ -1,0 +1,13 @@
+<test>
+	<source>ia.asm</source>
+	<name>Basic Interrupts</name>
+	<cycles>1000</cycles>
+	<results>
+		<register name="a" value="1"/>
+		<register name="b" value="2"/>
+		<register name="c" value="3"/>
+		<register name="x" value="0"/>
+		<register name="y" value="0"/>
+		<register name="z" value="0"/>
+	</results>
+</test>

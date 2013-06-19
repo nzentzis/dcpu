@@ -1,0 +1,14 @@
+<test>
+	<source>st.asm</source>
+	<name>ST* opcodes</name>
+	<cycles>10000</cycles>
+	<results>
+		<register name="a" value="7"/>
+		<register name="b" value="5"/>
+		<register name="c" value="3"/>
+		<register name="x" value="2"/>
+		<register name="y" value="99"/>
+		<register name="i" value="2"/>
+		<register name="j" value="2"/>
+	</results>
+</test>
