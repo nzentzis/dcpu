@@ -1,0 +1,16 @@
+<test>
+	<source>sbx.asm</source>
+	<name>SBX (b = b-a+EX, EX=0xffff on underflow, else 0) </name>
+	<cycles>1000</cycles>
+	<results>
+		<memory addr="1000" value="3"/>
+		<memory addr="1001" value="2"/>
+		<memory addr="1002" value="0"/>
+		<memory addr="1003" value="3"/>
+		<memory addr="1004" value="0xfffe"/>
+		<memory addr="1005" value="0xffff"/>
+		<memory addr="1006" value="1"/>
+		<memory addr="1007" value="8"/>
+		<memory addr="1008" value="0"/>
+	</results>
+</test>
