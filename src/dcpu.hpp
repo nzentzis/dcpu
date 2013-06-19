@@ -62,6 +62,10 @@ struct DCPUHardwareDevice {
 	// interrupts block the processor while they run. The DCPU is locked while each
 	// interrupt is executing.
 	virtual uint8_t onInterrupt(DCPUState* cpu)=0;
+
+	// Update the hardware device. This is where you should queue any interrupts that
+	// need to be executed.
+	virtual void update(DCPUState* cpu)=0;
 	
 	// Hardware device should do nothing but return the cycle cost of the given
 	// interrupt given a DCPUState - DO NOT MODIFY THE PASSED STATE.
