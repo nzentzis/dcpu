@@ -1,0 +1,19 @@
+<test>
+	<source>div.asm</source>
+	<name>Division</name>
+	<cycles>1000</cycles>
+	<results>
+		<register name="a" value="4"/>
+		<memory addr="1002" value="0"/>
+		<register name="b" value="0"/>
+		<memory addr="1003" value="0"/>
+		<register name="c" value="6"/>
+		<memory addr="1000" value="0xeaaa"/>
+		<register name="x" value="0xfffc"/>
+		<memory addr="1001" value="0"/>
+		<register name="y" value="0xfff9"/>
+		<memory addr="1004" value="0x8000"/>
+		<register name="z" value="0"/>
+		<register name="j" value="0"/>
+	</results>
+</test>

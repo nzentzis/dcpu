@@ -1,0 +1,14 @@
+<test>
+	<source>mul.asm</source>
+	<name>Multiplication</name>
+	<cycles>1000</cycles>
+	<results>
+		<register name="a" value="0xea42"/>
+		<register name="b" value="0xffba"/>
+		<register name="c" value="0"/>
+		<register name="x" value="0"/>
+		<register name="y" value="0"/>
+		<register name="z" value="0"/>
+		<register name="j" value="0x16"/>
+	</results>
+</test>

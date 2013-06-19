@@ -1,0 +1,14 @@
+<test>
+	<source>mod.asm</source>
+	<name>Modulus</name>
+	<cycles>1000</cycles>
+	<results>
+		<register name="a" value="0"/>
+		<register name="b" value="0"/>
+		<register name="c" value="0x000b"/>
+		<register name="x" value="0"/>
+		<register name="y" value="1"/>
+		<register name="z" value="0"/>
+		<register name="j" value="0"/>
+	</results>
+</test>
