@@ -119,7 +119,8 @@ testFiles = filter(lambda x: x.endswith(".xml"), testFiles)
 failed = []
 passed = []
 for ctest in testFiles:
-	print("Testing '%s'" % ctest)
+	sys.stdout.write("Testing '%s'..." % ctest)
+	sys.stdout.flush()
 	try:
 		fdata = open(os.path.join("tests", ctest), "r").read()
 	except IOError:
