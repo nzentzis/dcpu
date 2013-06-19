@@ -269,7 +269,7 @@ DCPUInsn DCPUState::decodeInsn() {
 				insn.cycleCost += 1;
 				break;
 			case 0x0d:
-				insn.op = DO_XOR;
+				insn.op = DO_SHR;
 				insn.cycleCost += 1;
 				break;
 			case 0x0e:
