@@ -1,0 +1,13 @@
+<test>
+	<source>bin.asm</source>
+	<name>Binary Operations</name>
+	<cycles>1000</cycles>
+	<results>
+		<register name="a" value="0"/>
+		<register name="b" value="0x0f00"/>
+		<register name="c" value="0xff0f"/>
+		<register name="x" value="0xf0ff"/>
+		<register name="y" value="0xff00"/>
+		<register name="z" value="0xffff"/>
+	</results>
+</test>
