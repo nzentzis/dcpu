@@ -6,6 +6,7 @@
 #include <sys/mman.h>
 #endif
 
+#define ASSEMBLY_ERROR_CHECKING
 #define DISABLE_CYCLE_HOOK
 
 using namespace AsmJit;
@@ -696,12 +697,53 @@ void emitXOR(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
 }
 
 void emitSHR(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+	emitDCPUFetch(s, inst.a, ecx);
+	emitDCPUFetch(s, inst.b, eax);
+
+	// Perform the actual shift operation
+	s.shl(eax, 16);
+	s.shr(eax, cl);
+	s.mov(edx, eax);
+
+	// Emit the actual output value
+	s.shr(edx, 16);
+	emitDCPUPut(s, inst.b, dx);
+
+	// Clip to the shifted bits and put them in EX
+	s.and_(eax, 0xffff);
+	dcpuEmitSpecialWrite(s, DCPUValue::VT_EX);
 }
 
 void emitASR(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+	emitDCPUFetch(s, inst.a, ecx); // Don't zero-extend this because you can't shift negative
+	emitDCPUFetch(s, inst.b, eax, false, true);
+
+	// Perform the normal shift operation and output the result
+	s.mov(edx, eax);
+	s.sar(edx, cl);
+	emitDCPUPut(s, inst.b, dx);
+
+	// Generate the value for EX and store it
+	s.shl(eax, 16);
+	s.sar(eax, cl);
+	s.and_(eax, 0xffff);
+	dcpuEmitSpecialWrite(s, DCPUValue::VT_EX);
 }
 
 void emitSHL(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+	emitDCPUFetch(s, inst.a, ecx);
+	emitDCPUFetch(s, inst.b, eax);
+
+	// Perform the actual shift operation
+	s.shl(eax, cl);
+
+	// Emit the actual output value
+	emitDCPUPut(s, inst.b, ax);
+
+	// Clip to the shifted bits and put them in EX
+	s.shr(eax, 16);
+	s.and_(eax, 0xffff);
+	dcpuEmitSpecialWrite(s, DCPUValue::VT_EX);
 }
 
 void emitADX(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
@@ -890,6 +932,12 @@ void JITProcessor::generateCode() {
 	bool assembling = true;
 	emitHeader(buf);
 	while(assembling) {
+#ifdef ASSEMBLY_ERROR_CHECKING
+		if(buf.getError() != 0) {
+			printf("Assembly error: %s at %04x\n", getErrorString(buf.getError()), m_state.info.pc);
+			break;
+		}
+#endif
 		inst = m_state.decodeInsn();
 		cost += inst.cycleCost;
 		if(state.bindCtr == 0) {
@@ -1044,6 +1092,12 @@ void JITProcessor::generateCode() {
 	
 	// Store the function in cache and restore the program counter
 	m_codeCache[oldPC] = function_cast<dcpu64Func>(buf.make());
+#ifdef ASSEMBLY_ERROR_CHECKING
+	if(m_codeCache[oldPC] == NULL) {
+		printf("Assembly error - Program will crash. E: %s\n", getErrorString(buf.getError()));
+		fflush(stdout);
+	}
+#endif
 	m_chunkCosts[oldPC] = (cost == 0) ? 1 : cost;
 	m_cacheAddrs.push_back(oldPC);
 	m_state.info.pc = oldPC;
