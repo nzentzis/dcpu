@@ -10,7 +10,7 @@ set c, 0x2
 asr c, 0xf003
 set [1002], ex
 
-set x, 1
+set x, 0xf003
 asr x, 6
 
 :loop

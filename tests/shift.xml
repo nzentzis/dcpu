@@ -3,16 +3,16 @@
 	<name>Binary Shifts</name>
 	<cycles>1000</cycles>
 	<results>
-		<register name="a" value="0x0f000"/>
-		<memory addr="1000" value="0x000f"/>
+		<register name="a" value="0xf000"/>
+		<memory addr="1000" value="0x00f0"/>
 
 		<register name="b" value="0x42"/>
 		<memory addr="1001" value="0x4200"/>
 
-		<register name="c" value="0xfc00"/>
-		<memory addr="1001" value="0xc000"/>
+		<register name="c" value="0"/>
+		<memory addr="1002" value="0x4000"/>
 
-		<register name="x" value="3"/>
-		<register name="ex" value="0"/>
+		<register name="x" value="0xffc0"/>
+		<register name="ex" value="0x0c00"/>
 	</results>
 </test>
