@@ -747,29 +747,43 @@ void emitSHL(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
 }
 
 void emitADX(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
-	emitDCPUFetch(s, inst.a, eax);
-	emitDCPUFetch(s, inst.b, ebx);
-	s.add(ebx, eax);
-	s.mov(word_ptr(rdi, 2*10), 0);
-	Label nocarry = s.newLabel();
-	s.jnc(nocarry);
-	s.mov(word_ptr(rdi, 2*10), 1);
-	s.bind(nocarry);
-	s.add(ebx, word_ptr(rdi, 2*10));
+	emitDCPUFetch(s, inst.a, ebx);
+	emitDCPUFetch(s, inst.b, ecx);
+	dcpuEmitSpecialRead(s, DCPUValue::VT_EX);
 	
-	Label done = s.newLabel();
-	s.jnc(done);
+	// Since we're operating in 32-bit ints we can ignore overflow
+	s.add(ebx, ecx);
+	s.add(ebx, eax);
 
-	s.mov(word_ptr(rdi, 2*10), 1);
-	s.bind(done);
+	// Store the result back from ebx
 	emitDCPUPut(s, inst.b, ebx);
+
+	// Compute the value for EX
+	s.xor_(eax, eax);
+	s.mov(ecx, 1);
+	s.shr(ebx, 16);
+	s.and_(ebx, 0xffff);
+	s.cmovnz(eax, ecx);
+	dcpuEmitSpecialWrite(s, DCPUValue::VT_EX);
 }
 
 void emitSBX(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
-	emitDCPUFetch(s, inst.a, eax);
-	emitDCPUFetch(s, inst.b, ebx);
-	s.add(ebx, eax);
-	s.add(ebx, word_ptr(rdi, 2*10));
+	emitDCPUFetch(s, inst.a, ebx);
+	emitDCPUFetch(s, inst.b, ecx);
+	dcpuEmitSpecialRead(s, DCPUValue::VT_EX);
+
+	// Since we're operating in 32-bit ints we can ignore overflow
+	// as long as we shift the operands around a little
+	s.add(ecx, eax);
+	s.sub(ecx, ebx);
+
+	emitDCPUPut(s, inst.b, ecx);
+
+	// Write the result into EX
+	s.mov(ebx, 0xffff);
+	s.mov(eax, 0);
+	s.cmovc(eax, ebx);
+	dcpuEmitSpecialWrite(s, DCPUValue::VT_EX);
 }
 
 void emitSTI(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
