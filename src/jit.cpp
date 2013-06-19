@@ -253,6 +253,7 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true, bool sx=fals
 			}
 			break;
 		case DCPUValue::VT_PICK:
+			// TODO: Implement
 			break;
 		case DCPUValue::VT_SP:
 			if(zx) {
@@ -292,8 +293,12 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true, bool sx=fals
 			}
 			break;
 		case DCPUValue::VT_LITERAL:
-			int16_t value = *((int16_t*)&r.nextWord);
-			s.mov(reg, value);
+			if(sx) {
+				int16_t value = *((int16_t*)&r.nextWord);
+				s.mov(reg, value);
+			} else {
+				s.mov(reg, r.nextWord);
+			}
 			break;
 	}
 }
@@ -544,11 +549,20 @@ void emitMUL(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
 }
 
 void emitMLI(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
-	// Same as MUL, but using imul instead of mul
-	emitDCPUFetch(s, inst.a, ebx);
-	emitDCPUFetch(s, inst.b, eax);
+	// Same as MUL, but using imul instead of mul. Also, we have to sign-extend
+	// the multiplicands when fetching them from memory.
+	emitDCPUFetch(s, inst.a, ebx, false, true);
+	emitDCPUFetch(s, inst.b, eax, false, true);
+
+	// Actually multiply
 	s.imul(bx);
+
+	// Store the results back. Store the overflow first, since DCPUPut can use
+	// dx for scratch space and I want to avoid the overhead of a push/pop pair. Also
+	// this is easier.
 	s.mov(word_ptr(rdi, 2*10), dx);
+
+	// Now store the final result
 	emitDCPUPut(s, inst.b, ax);
 }
 
@@ -559,12 +573,14 @@ void emitDIV(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
 	// Build a label for zero-checking
 	Label doneLbl = s.newLabel();
 
-	// Set up the division operation
+	// Set up the division operation and check for division by zero
 	s.mov(ecx, eax); // Store B value
 	s.xor_(edx, edx); // The second part can be zeroed since unsigned division
 	s.cmp(ebx, edx);
 	s.cmove(eax, edx);
 	s.je(doneLbl);
+
+	// Divide to generate the EX value
 	s.shl(eax, 16); // Shift 16 to compute the EX value
 	s.div(ebx); // Get the new value for the EX register
 	
@@ -573,18 +589,89 @@ void emitDIV(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
 	
 	// Divide for B register
 	s.mov(eax, ecx);
+	s.xor_(edx, edx);
 	s.div(ebx); // Get the new value for the B register
 	s.bind(doneLbl);
 	emitDCPUPut(s, inst.b, ax);
 }
 
+// Sign-extend eax into edx
+inline void emitSignExtend(Assembler& s) {
+	// if(eax > 0) edx = 0; else edx = 0xffffffff
+	s.mov(edx, eax);
+	s.sar(edx, 31);
+}
+
 void emitDVI(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+	emitDCPUFetch(s, inst.a, ebx, false, true);
+	emitDCPUFetch(s, inst.b, eax, false, true);
+
+	// Build a label for zero-checking
+	Label doneLbl = s.newLabel();
+
+	// Check for division by zero
+	s.xor_(edx, edx);
+	s.cmp(ebx, 0);
+	s.cmove(eax, edx);
+	s.je(doneLbl);
+
+	// Sign-extend eax into edx
+	s.mov(ecx, eax);
+	s.shl(eax, 16);
+	emitSignExtend(s);
+	
+	// Divide edx:eax by ebx
+	s.idiv(ebx);
+
+	// Update EX register
+	s.mov(word_ptr(rdi, 2*10), ax);
+	
+	// Sign-extend for B register division
+	s.mov(eax, ecx);
+	emitSignExtend(s);
+
+	// Divide for B
+	s.idiv(ebx);
+	s.bind(doneLbl);
+	emitDCPUPut(s, inst.b, ax);
 }
 
 void emitMOD(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+	emitDCPUFetch(s, inst.a, ebx);
+	emitDCPUFetch(s, inst.b, eax);
+	
+	// Build a label for zero-checking
+	Label doneLbl = s.newLabel();
+
+	// Set up the division operation and check for division by zero
+	s.cmp(ebx, 0);
+	s.je(doneLbl);
+
+	// Divide to generate modulus in edx
+	s.xor_(edx, edx); // Zero the second part since we're doing unsigned division
+	s.div(ebx); // Get the new value for the B register
+	s.bind(doneLbl);
+	emitDCPUPut(s, inst.b, dx);
 }
 
 void emitMDI(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
+	emitDCPUFetch(s, inst.a, ebx, false, true);
+	emitDCPUFetch(s, inst.b, eax, false, true);
+
+	// Build a label for zero-checking
+	Label doneLbl = s.newLabel();
+
+	// Check for division by zero
+	s.cmp(ebx, 0);
+	s.je(doneLbl);
+
+	// Divide eax by ebx, storing remainder in edx
+	emitSignExtend(s);
+	s.idiv(ebx);
+
+	// Store results
+	s.bind(doneLbl);
+	emitDCPUPut(s, inst.b, dx);
 }
 
 void emitAND(Assembler& s, DCPUInsn inst, CodeGenState& cgs) {
