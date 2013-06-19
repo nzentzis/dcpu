@@ -7,7 +7,7 @@
 #endif
 
 #define ASSEMBLY_ERROR_CHECKING
-#define DISABLE_CYCLE_HOOK
+//#define DISABLE_CYCLE_HOOK
 
 using namespace AsmJit;
 
@@ -109,30 +109,33 @@ void dcpuEmitCarry(AsmJit::Assembler& s, uint16_t value) {
 // Cycle hook - use this to check the interrupt status. If an interrupt is
 // fired, this should return a nonzero value.
 uint8_t cycleHook(DCPURegisterInfo* info) {
-	if(!info->enableInterrupts) return 0;
+	if(info->ia == 0) return 0;
 	DCPUState* state = (DCPUState*)(info->statePtr);
 
 	// Update hardware information
 	// Check the interrupt queue
-	if(!state->interruptQueue.empty()) {
-		// Mark the ISR flag, meaning that when the generated code
-		// returns after we do, the cycle function will catch this
-		// and handle the next interrupt.
-		state->isr = true;
-		return 1;
-	}
-	return 0;
+	if(state->interruptQueue.empty()) return 0;
+	// Mark the ISR flag, meaning that when the generated code
+	// returns after we do, the cycle function will catch this
+	// and handle the next interrupt.
+	state->isr = true;
+	return 1;
 }
 
 void emitCycleHook(AsmJit::Assembler& s, uint8_t cycles) {
 #ifdef DISABLE_CYCLE_HOOK
 	s.nop();
 #else
+	// Check the interrupt disable flag
+	Label okay = s.newLabel();
+	s.movzx(eax, byte_ptr(rdi, 0x16));
+	s.cmp(eax, 0);
+	s.je(okay);
+
 	// Emit a call to the cycle hook function
 	s.call((void*)&cycleHook);
 	
 	// Check for results
-	Label okay = s.newLabel();
 	s.cmp(rax, 0);
 	s.je(okay);
 	
@@ -176,7 +179,7 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true, bool sx=fals
 			if(zx) {
 				s.movzx(reg, word_ptr(rsi, rdx));
 			} else if(sx) {
-				s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+				s.movsx(reg, word_ptr(rsi, rdx));
 			} else {
 				s.mov(reg, word_ptr(rsi, rdx));
 			}
@@ -191,7 +194,7 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true, bool sx=fals
 			if(zx) {
 				s.movzx(reg, word_ptr(rsi, rdx));
 			} else if(sx) {
-				s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+				s.movsx(reg, word_ptr(rsi, rdx));
 			} else {
 				s.mov(reg, word_ptr(rsi, rdx));
 			}
@@ -213,7 +216,7 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true, bool sx=fals
 				if(zx) {
 					s.movzx(reg, word_ptr(rsi, rcx));
 				} else if(sx) {
-					s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+					s.movsx(reg, word_ptr(rsi, rcx));
 				} else {
 					s.mov(reg, word_ptr(rsi, rcx));
 				}
@@ -229,7 +232,7 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true, bool sx=fals
 				if(zx) {
 					s.movzx(reg, word_ptr(rsi, rcx));
 				} else if(sx) {
-					s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+					s.movsx(reg, word_ptr(rsi, rcx));
 				} else {
 					s.mov(reg, word_ptr(rsi, rcx));
 				}
@@ -248,7 +251,7 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true, bool sx=fals
 			if(zx) {
 				s.movzx(reg, word_ptr(rsi, rcx));
 			} else if(sx) {
-				s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+				s.movsx(reg, word_ptr(rsi, rcx));
 			} else {
 				s.mov(reg, word_ptr(rsi, rcx));
 			}
@@ -260,7 +263,7 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true, bool sx=fals
 			if(zx) {
 				s.movzx(reg, word_ptr(rdi, 2*9));
 			} else if(sx) {
-				s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+				s.movsx(reg, word_ptr(rdi, 2*9));
 			} else {
 				s.mov(reg, word_ptr(rdi, 2*9));
 			}
@@ -269,7 +272,7 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true, bool sx=fals
 			if(zx) {
 				s.movzx(reg, word_ptr(rdi, 2*8));
 			} else if(sx) {
-				s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+				s.movsx(reg, word_ptr(rdi, 2*8));
 			} else {
 				s.mov(reg, word_ptr(rdi, 2*8));
 			}
@@ -278,7 +281,7 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true, bool sx=fals
 			if(zx) {
 				s.movzx(reg, word_ptr(rdi, 2*10));
 			} else if(sx) {
-				s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+				s.movsx(reg, word_ptr(rdi, 2*10));
 			} else {
 				s.mov(reg, word_ptr(rdi, 2*10));
 			}
@@ -288,7 +291,7 @@ void emitDCPUFetch(Assembler& s, DCPUValue r, T& reg, bool zx=true, bool sx=fals
 			if(zx) {
 				s.movzx(reg, word_ptr(rsi, 2*r.nextWord));
 			} else if(sx) {
-				s.movsx(reg, word_ptr(rdi, 2*((uint8_t)(r.reg))));
+				s.movsx(reg, word_ptr(rdi, 2*r.nextWord));
 			} else {
 				s.mov(reg, word_ptr(rsi, 2*r.nextWord));
 			}
@@ -366,6 +369,11 @@ void emitDCPUPut(Assembler& s, DCPUValue r, T &reg) {
 			}
 			break;
 		case DCPUValue::VT_PEEK:
+			s.mov(rdx, 0xffff);
+			s.movzx(rcx, word_ptr(rdi, 0x12));
+			s.shl(rcx, 1);
+			s.mov(rsi, qword_ptr(rdi, 32));
+			s.mov(word_ptr(rsi, rcx), reg);
 			break;
 		case DCPUValue::VT_PICK:
 			break;
@@ -493,6 +501,7 @@ bool JITProcessor::cycle() {
 			return false;
 		}
 		// Handle one interrupt
+		m_state.isr = false;
 		uint16_t interrupt = m_state.interruptQueue.front();
 		m_state.interruptQueue.pop();
 
@@ -503,6 +512,7 @@ bool JITProcessor::cycle() {
 		// Set up the environment for the interrupt handler
 		m_state.info.a = interrupt;
 		m_state.info.pc = m_state.info.ia;
+		m_state.info.queueInterrupts = true;
 	}
 	return true;
 }
@@ -821,6 +831,61 @@ void emitHWI(Assembler& s, DCPUInsn inst, CodeGenState cgs) {
 	emitFooter(s);
 }
 
+void emitJSR(Assembler& s, DCPUInsn inst, CodeGenState cgs) {
+	// Push PC
+	static DCPUValue push;
+	push.val = DCPUValue::VT_PUSHPOP;
+	push.b = true;
+	dcpuEmitSpecialRead(s, DCPUValue::VT_PC);
+	emitDCPUPut(s, push, ax);
+
+	// Read the new value for PC
+	emitDCPUFetch(s, inst.a, eax);
+	dcpuEmitSpecialWrite(s, DCPUValue::VT_PC);
+}
+
+void emitIAQ(Assembler& s, DCPUInsn inst, CodeGenState cgs) {
+	emitDCPUFetch(s, inst.a, eax);
+	s.mov(al, byte_ptr(rdi, 0x29));
+}
+
+void emitIAG(Assembler& s, DCPUInsn inst, CodeGenState cgs) {
+	s.movzx(eax, word_ptr(rdi, 0x16));
+	emitDCPUPut(s, inst.a, eax);
+}
+
+void emitIAS(Assembler& s, DCPUInsn inst, CodeGenState cgs) {
+	emitDCPUFetch(s, inst.a, eax);
+	s.mov(word_ptr(rdi, 0x16), ax);
+}
+
+void queueInterrupt(DCPURegisterInfo* info, uint16_t n) {
+	DCPUState* s = (DCPUState*)info->statePtr;
+	s->interruptQueue.push(n);
+}
+
+void emitINT(Assembler& s, DCPUInsn inst, CodeGenState cgs) {
+	// Queue the given interrupt. RSI is the second parameter
+	emitDCPUFetch(s, inst.a, rsi);
+	s.call((void*)&queueInterrupt);
+}
+
+void emitRFI(Assembler& s, DCPUInsn inst, CodeGenState cgs) {
+	// Disable interrupt queueing
+	s.mov(byte_ptr(rdi, 0x29), 0);
+
+	// Pop A and PC
+	static DCPUValue pop;
+	pop.val = DCPUValue::VT_PUSHPOP;
+	pop.b = false;
+	emitDCPUFetch(s, pop, eax);
+	emitDCPUFetch(s, pop, ebx);
+
+	// Write A and PC back
+	s.mov(word_ptr(rdi, 0x00), ax);
+	s.mov(word_ptr(rdi, 0x10), bx);
+}
+
 bool isConditionalSigned(DCPUInsn i) {
 	switch(i.op) {
 		case DO_IFA:
@@ -1074,16 +1139,26 @@ void JITProcessor::generateCode() {
 				emitSBX(buf, inst, state);
 				break;
 			case DO_INT:
+				emitINT(buf, inst, state);
 				break;
 			case DO_IAG:
+				emitIAG(buf, inst, state);
 				break;
 			case DO_JSR:
+				emitJSR(buf, inst, state);
+				if(state.bindCtr == -1)
+					assembling = false;
+				else
+					emitFooter(buf);
 				break;
 			case DO_IAS:
+				emitIAS(buf, inst, state);
 				break;
 			case DO_RFI:
+				emitRFI(buf, inst, state);
 				break;
 			case DO_IAQ:
+				emitIAQ(buf, inst, state);
 				break;
 			case DO_HWN:
 				emitHWN(buf, inst, state);

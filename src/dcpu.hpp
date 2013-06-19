@@ -82,9 +82,10 @@ struct DCPURegisterInfo {
 	// Memory
 	uint16_t *memory;			// Offset 0x20
 	uint8_t enableInterrupts;		// Offset 0x28 (pointers are 64-bit on x86-64)
+	uint8_t queueInterrupts;		// Offset 0x29 When active, disables calling the cycle hook
 
 	// External state
-	void* statePtr;				// Offset 0x29
+	void* statePtr;				// Offset 0x30
 } __attribute__((packed));
 
 // Full representation of the state of an emulated DCPU
