@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <vector>
 #include <queue>
+#include <boost/thread.hpp>
 
 struct DCPUState;
 
@@ -47,8 +48,8 @@ struct DCPUInsn {
 
 struct DCPUHardwareInformation {
 	uint32_t hwID;
-	uint32_t hwManufacturer;
 	uint16_t hwRevision;
+	uint16_t hwManufacturer;
 };
 
 // Hardware base class
@@ -63,15 +64,11 @@ struct DCPUHardwareDevice {
 	// interrupt is executing.
 	virtual uint8_t onInterrupt(DCPUState* cpu)=0;
 
-	// Update the hardware device. This is where you should queue any interrupts that
-	// need to be executed.
-	virtual void update(DCPUState* cpu)=0;
-	
 	// Hardware device should do nothing but return the cycle cost of the given
 	// interrupt given a DCPUState - DO NOT MODIFY THE PASSED STATE.
 	virtual uint8_t getCyclesForInterrupt(uint16_t iNum, DCPUState* cpu)=0;
 	
-	virtual DCPUHardwareInformation getInformation();
+	virtual DCPUHardwareInformation getInformation()=0;
 };
 
 // State of the DCPU for passing to assembler routines
@@ -113,6 +110,7 @@ struct DCPUState {
 	// Threading and state tracking stuff
 	uint64_t elapsed; // Total elapsed cycles
 	bool ignited;
+	boost::mutex m_interruptMutex;
 
 	// Stuff that's used by the in-ASM callbacks to keep state
 	bool isr;

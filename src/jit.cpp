@@ -114,11 +114,16 @@ uint8_t cycleHook(DCPURegisterInfo* info) {
 
 	// Update hardware information
 	// Check the interrupt queue
-	if(state->interruptQueue.empty()) return 0;
+	state->m_interruptMutex.lock();
+	if(state->interruptQueue.empty()) {
+		state->m_interruptMutex.unlock();
+		return 0;
+	}
 	// Mark the ISR flag, meaning that when the generated code
 	// returns after we do, the cycle function will catch this
 	// and handle the next interrupt.
 	state->isr = true;
+	state->m_interruptMutex.unlock();
 	return 1;
 }
 
@@ -133,7 +138,9 @@ void emitCycleHook(AsmJit::Assembler& s, uint8_t cycles) {
 	s.je(okay);
 
 	// Emit a call to the cycle hook function
+	s.push(rdi);
 	s.call((void*)&cycleHook);
+	s.pop(rdi);
 	
 	// Check for results
 	s.cmp(rax, 0);
