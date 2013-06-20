@@ -49,7 +49,7 @@ struct DCPUInsn {
 struct DCPUHardwareInformation {
 	uint32_t hwID;
 	uint16_t hwRevision;
-	uint16_t hwManufacturer;
+	uint32_t hwManufacturer;
 };
 
 // Hardware base class

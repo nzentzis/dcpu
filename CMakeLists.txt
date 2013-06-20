@@ -29,8 +29,19 @@ find_package(Threads REQUIRED)
 
 include_directories(${Boost_INCLUDE_DIR})
 
-add_executable(dcpu src/main.cpp src/jit.cpp src/dcpu.cpp src/asmjit/AssemblerX86X64.cpp src/asmjit/CodeGenerator.cpp
-	src/asmjit/Compiler.cpp src/asmjit/CompilerX86X64.cpp src/asmjit/CpuInfo.cpp src/asmjit/Defs.cpp src/asmjit/DefsX86X64.cpp
-	src/asmjit/Logger.cpp src/asmjit/MemoryManager.cpp src/asmjit/MemoryMarker.cpp src/asmjit/OperandX86X64.cpp
-	src/asmjit/Platform.cpp src/asmjit/Util.cpp)
+set(ASMJIT_SRC src/asmjit/AssemblerX86X64.cpp src/asmjit/CodeGenerator.cpp
+	src/asmjit/Compiler.cpp
+	src/asmjit/CompilerX86X64.cpp
+	src/asmjit/CpuInfo.cpp
+	src/asmjit/Defs.cpp
+	src/asmjit/DefsX86X64.cpp
+	src/asmjit/Logger.cpp
+	src/asmjit/MemoryManager.cpp
+	src/asmjit/MemoryMarker.cpp
+	src/asmjit/OperandX86X64.cpp
+	src/asmjit/Platform.cpp
+	src/asmjit/Util.cpp)
+set(HW_SRC src/hw/clock.cpp)
+
+add_executable(dcpu src/main.cpp src/jit.cpp src/dcpu.cpp ${HW_SRC} ${ASMJIT_SRC})
 target_link_libraries(dcpu ${Boost_LIBRARIES})
