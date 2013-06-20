@@ -2,11 +2,13 @@
 #include <iostream>
 #include <stdlib.h>
 #include <string>
-#include "dcpu.hpp"
-#include "jit.hpp"
 #include <boost/chrono.hpp>
 #include <boost/thread.hpp>
 #include <boost/program_options.hpp>
+
+#include "dcpu.hpp"
+#include "jit.hpp"
+#include "hw/clock.hpp"
 
 #define BENCHMARK_CYCLES 100000000
 
@@ -75,8 +77,10 @@ int main(int argc, char **argv) {
 	}
 	
 	// Attach hardware to the processor
+	Clock* hwClk = NULL;
 	if(vmap.count("bench") == 0) { // benchmarking mode disables all hardware and forces a limited number of cycles
 		// Attach clock
+		hwClk = new Clock(&proc.getState());
 		
 		if(vmap.count("sped")) {
 			// Attach a SPED-3
